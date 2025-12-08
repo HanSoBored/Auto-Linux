@@ -1,0 +1,47 @@
+name: Build and Release
+
+on:
+  push:
+    branches: [ "main", "unit-test" ]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  TARGET: aarch64-unknown-linux-musl
+  BINARY_NAME: autolinux
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Install Rust Toolchain
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: ${{ env.TARGET }}
+
+    - name: Install Cross
+      run: cargo install cross
+
+    - name: Build Release (Musl Static)
+      run: cross build --target ${{ env.TARGET }} --release
+
+    - name: Prepare Artifact
+      run: |
+        mv target/${{ env.TARGET }}/release/${{ env.BINARY_NAME }} ${{ env.BINARY_NAME }}-aarch64
+        echo "Artifact ready: ${{ env.BINARY_NAME }}-aarch64"
+
+    - name: Upload Rolling Release
+      uses: marvinpinto/action-automatic-releases@latest
+      with:
+        repo_token: "${{ secrets.GITHUB_TOKEN }}"
+        automatic_release_tag: "latest"
+        prerelease: false
+        title: "Latest Build (Auto-generated)"
+        files: |
+          ${{ env.BINARY_NAME }}-aarch64
