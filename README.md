@@ -28,6 +28,12 @@
 
 ## Screenshots
 
+Preview:
+![preview 1](https://raw.githubusercontent.com/HanSoBored/Auto-Linux/unit-test/preview/preview1.jpg)
+
+![preview 2](https://raw.githubusercontent.com/HanSoBored/Auto-Linux/unit-test/preview/preview2.jpg)
+
+![preview 3](https://raw.githubusercontent.com/HanSoBored/Auto-Linux/unit-test/preview/preview3.jpg)
 
 
 ---
