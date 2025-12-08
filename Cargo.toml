@@ -1,0 +1,20 @@
+[package]
+name = "autolinux"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+ratatui = { version = "0.29", default-features = false, features = ["crossterm"] }
+crossterm = "0.28"
+ureq = { version = "2.10", default-features = false, features = ["tls", "json"] }
+flate2 = "1.0"
+tar = "0.4"
+sys-info = "0.9"
+libc = "0.2"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
