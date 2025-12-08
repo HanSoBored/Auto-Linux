@@ -44,7 +44,7 @@ Preview:
 Run this command in **Termux**, **ADB Shell**, or any Terminal Emulator:
 
 ```bash
-curl -sL https://raw.githubusercontent.com/HanSoBored/Auto-Linux/master/install.sh | sh
+curl -sL https://raw.githubusercontent.com/HanSoBored/Auto-Linux/main/install.sh | sh
 ```
 
 > **Note:** This script automatically detects if you have Termux installed and creates a shortcut. You can then simply type `autolinux` to start.
@@ -94,4 +94,4 @@ This tool modifies system partitions (mounting) and creates files in `/data`. Wh
 
 ## License
 
-Distributed under the MIT License. See `LICENSE` for more information.
+Distributed under the MIT License. See [LICENSE](LICENSE)for more information.
