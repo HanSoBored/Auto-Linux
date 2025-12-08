@@ -1,6 +1,6 @@
 # Auto-Linux (Rust Edition)
 
-![Build Status](https://img.shields.io/github/actions/workflow/status/HanSoBored/Auto-Linux/build.yml?branch=master)
+![Build Status](https://img.shields.io/github/actions/workflow/status/HanSoBored/Auto-Linux/build.yml?branch=main)
 ![Language](https://img.shields.io/badge/language-Rust-orange)
 ![Platform](https://img.shields.io/badge/platform-Android%20(Root)-green)
 ![License](https://img.shields.io/badge/license-MIT-blue)
@@ -29,11 +29,11 @@
 ## Screenshots
 
 Preview:
-![preview 1](https://raw.githubusercontent.com/HanSoBored/Auto-Linux/unit-test/preview/preview1.jpg)
+![preview 1](https://raw.githubusercontent.com/HanSoBored/Auto-Linux/main/preview/preview1.jpg)
 
-![preview 2](https://raw.githubusercontent.com/HanSoBored/Auto-Linux/unit-test/preview/preview2.jpg)
+![preview 2](https://raw.githubusercontent.com/HanSoBored/Auto-Linux/main/preview/preview2.jpg)
 
-![preview 3](https://raw.githubusercontent.com/HanSoBored/Auto-Linux/unit-test/preview/preview3.jpg)
+![preview 3](https://raw.githubusercontent.com/HanSoBored/Auto-Linux/main/preview/preview3.jpg)
 
 
 ---
@@ -44,7 +44,7 @@ Preview:
 Run this command in **Termux**, **ADB Shell**, or any Terminal Emulator:
 
 ```bash
-su -c "curl -sL https://raw.githubusercontent.com/HanSoBored/Auto-Linux/master/install.sh | sh"
+curl -sL https://raw.githubusercontent.com/HanSoBored/Auto-Linux/master/install.sh | sh
 ```
 
 > **Note:** This script automatically detects if you have Termux installed and creates a shortcut. You can then simply type `autolinux` to start.
