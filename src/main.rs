@@ -41,11 +41,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     log_info!("Android Ver: {}", device_info.android_ver);
     log_info!("Is Root: {}, Can SU: {}", device_info.is_root, device_info.can_su);
 
-    if !device_info.is_root && device_info.can_su {
-        log_info!("Attempting self-elevation...");
-        try_elevate_privileges();
-        log_info!("Failed to elevate. Continuing as non-root (PRoot mode only).");
+    if !device_info.is_root {
+        if device_info.can_su {
+            log_info!("Not root. Attempting self-elevation...");
+            try_elevate_privileges();
+
+            let err_msg = "Failed to gain root access. Please grant permission to the 'su' request.";
+            log_error!("{}", err_msg);
+            eprintln!("{}", err_msg);
+            exit(1);
+        } else {
+            let err_msg = "Root access is required, but 'su' binary not found.";
+            log_error!("{}", err_msg);
+            eprintln!("{}", err_msg);
+            exit(1);
+        }
     }
+
+    log_info!("Root access confirmed. Initializing TUI...");
 
     enable_raw_mode()?;
     let mut stdout = io::stdout();
