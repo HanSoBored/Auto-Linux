@@ -66,23 +66,26 @@ fn render_dashboard(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
         Span::styled("Non-Root", Style::default().fg(Color::Red))
     };
 
-    let mode_span = if device.is_root || device.can_su {
-         Span::styled("Chroot (Full Access)", Style::default().fg(Color::Cyan))
-    } else {
-         Span::styled("PRoot (User Space)", Style::default().fg(Color::Yellow))
-    };
+    let mode_span = Span::styled("Chroot (Full Access)", Style::default().fg(Color::Cyan));
 
     let info_text = vec![
         Line::from(vec![Span::raw("Device Architecture : "), Span::styled(&device.arch, Style::default().fg(Color::Magenta))]),
         Line::from(vec![Span::raw("Android Version     : "), Span::styled(&device.android_ver, Style::default().fg(Color::Blue))]),
         Line::from(vec![Span::raw("Root Access         : "), root_status_span]),
         Line::from(vec![Span::raw("Install Mode        : "), mode_span]),
-        Line::from(""),
-        Line::from("Welcome to AutoLinux."),
-        Line::from("Press 'i' to browse available Ubuntu versions."),
     ];
 
-    let info_block = Paragraph::new(info_text) 
+    let final_text = vec![
+        info_text[0].clone(),
+        info_text[1].clone(),
+        info_text[2].clone(),
+        info_text[3].clone(),
+        Line::from(""),
+        Line::from("Welcome to AutoLinux. Select an installed distro or press 'i' to install a new one."),
+    ];
+
+
+    let info_block = Paragraph::new(final_text)
         .block(Block::default().title(" System Info ").borders(Borders::ALL));
     f.render_widget(info_block, chunks[0]);
 
