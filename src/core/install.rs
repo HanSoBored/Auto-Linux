@@ -146,8 +146,8 @@ pub fn install_distro(
     log_info!("Wrote hosts configuration.");
 
     log_info!("Generating startup scripts...");
-    generate_start_script(&start_script_path, &install_path)?;
-    generate_internal_setup_script(&install_path, username, password)?;
+    generate_start_script(&start_script_path, &install_path, &distro.name)?;
+    generate_internal_setup_script(&install_path, username, password, &distro.name)?;
     log_info!("Scripts generated successfully.");
 
     log_info!("Installation finished successfully at {:?}", install_path);
@@ -178,8 +178,11 @@ fn resolve_hostname_via_android(hostname: &str) -> Result<String, String> {
     Err(format!("Could not parse IP from ping output: {}", stdout))
 }
 
-fn generate_start_script(script_path: &Path, install_path: &Path) -> io::Result<()> {
+fn generate_start_script(script_path: &Path, install_path: &Path, distro_name: &str) -> io::Result<()> {
     let path_str = install_path.to_string_lossy();
+    let is_alpine = distro_name.to_lowercase().contains("alpine");
+
+    let shell_cmd = if is_alpine { "/bin/sh" } else { "/bin/bash" };
 
     let content = format!(r#"#!/bin/sh
 UBUNTUPATH="{}"
@@ -214,10 +217,12 @@ done
 if [ -f "$UBUNTUPATH/root/finalize_setup.sh" ]; then
     echo "[!] First time setup detected. Configuring users & groups..."
     chmod +x "$UBUNTUPATH/root/finalize_setup.sh"
+
+    # FIX 1: Gunakan shell yang sesuai distro untuk setup
     if [ -x "$(command -v busybox)" ]; then
-        busybox chroot "$UBUNTUPATH" /bin/bash /root/finalize_setup.sh
+        busybox chroot "$UBUNTUPATH" {} /root/finalize_setup.sh
     else
-        /system/bin/chroot "$UBUNTUPATH" /bin/bash /root/finalize_setup.sh
+        /system/bin/chroot "$UBUNTUPATH" {} /root/finalize_setup.sh
     fi
     rm "$UBUNTUPATH/root/finalize_setup.sh"
 fi
@@ -230,7 +235,7 @@ if [ -x "$(command -v busybox)" ]; then
 else
     /system/bin/chroot "$UBUNTUPATH" /bin/su - "$TARGET_USER"
 fi
-"#, path_str);
+"#, path_str, shell_cmd, shell_cmd);
 
     fs::write(script_path, content)?;
     use std::os::unix::fs::PermissionsExt;
@@ -241,55 +246,62 @@ fi
     Ok(())
 }
 
-fn generate_internal_setup_script(install_path: &Path, username: &str, password: &str) -> io::Result<()> {
-    let content = format!(r#"#!/bin/bash
-unset TMPDIR
-export TMPDIR=/tmp
-export HOME=/root
+fn generate_internal_setup_script(install_path: &Path, username: &str, password: &str, distro_name: &str) -> io::Result<()> {
+    let is_alpine = distro_name.to_lowercase().contains("alpine");
+
+    let package_logic = if is_alpine {
+        r#"
+echo ">>> (Alpine) Updating Repository..."
+echo "http://dl-cdn.alpinelinux.org/alpine/edge/main" > /etc/apk/repositories
+echo "http://dl-cdn.alpinelinux.org/alpine/edge/community" >> /etc/apk/repositories
+apk update
+
+echo ">>> (Alpine) Installing Base Tools..."
+apk add bash shadow sudo nano net-tools git
+"#
+    } else {
+        r#"
+echo ">>> (Debian/Ubuntu) Updating Repository..."
+apt update -y
+
+echo ">>> (Debian/Ubuntu) Installing Tools..."
+apt install -y nano net-tools sudo git
+"#
+    };
+
+    let content = format!(r#"#!/bin/sh
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-export DEBIAN_FRONTEND=noninteractive
 
-mkdir -p /tmp
-chmod 1777 /tmp
+{}
 
-echo -e '#!/bin/sh\nexit 101' > /usr/sbin/policy-rc.d
-chmod +x /usr/sbin/policy-rc.d
-
-if [ ! -e /dev/fd ]; then
-    ln -sf /proc/self/fd /dev/fd 2>/dev/null || true
+echo ">>> Configuring Sudo Access..."
+# Izinkan group 'wheel' untuk menggunakan sudo
+# Kita append ke akhir file agar tidak merusak konfigurasi existing
+if [ -f /etc/sudoers ]; then
+    echo '%wheel ALL=(ALL:ALL) ALL' >> /etc/sudoers
 fi
 
 echo ">>> Configuring Network Groups..."
+# Android GID mapping
 groupadd -g 3003 aid_inet || true
 groupadd -g 3004 aid_net_raw || true
 groupadd -g 1003 aid_graphics || true
 
-usermod -g 3003 -G 3003,3004 -a _apt 2>/dev/null || true
+if [ -f /etc/debian_version ]; then
+    usermod -g 3003 -G 3003,3004 -a _apt 2>/dev/null || true
+fi
 usermod -G 3003 -a root
 
-echo ">>> Updating Repository..."
-apt update -y
-
-echo ">>> Installing Tools..."
-apt install -y nano net-tools sudo git || echo "[!] Apt install report errors, attempting fix..."
-
-dpkg --configure -a || true
-
-echo ">>> Configuring Sudoers..."
-echo "%wheel ALL=(ALL:ALL) ALL" > /etc/sudoers.d/wheel
-chmod 0440 /etc/sudoers.d/wheel
-
-echo ">>> Creating User '{0}'..."
+echo ">>> Creating User '{1}'..."
 groupadd storage || true
 groupadd wheel || true
 
-useradd -m -g users -G wheel,audio,video,storage,aid_inet -s /bin/bash {0}
-echo "{0}:{1}" | chpasswd
+useradd -m -g users -G wheel,audio,video,storage,aid_inet -s /bin/bash {1}
 
-rm /usr/sbin/policy-rc.d
+echo "{1}:{2}" | chpasswd
 
 echo ">>> Done!"
-"#, username, password);
+"#, package_logic, username, password);
 
     let setup_path = install_path.join("root/finalize_setup.sh");
     fs::write(setup_path, content)?;
