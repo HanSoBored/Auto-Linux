@@ -24,7 +24,8 @@ pub fn draw(f: &mut Frame, app: &mut App) {
 
     match app.current_screen {
         CurrentScreen::Dashboard => render_dashboard(f, app, chunks[1]),
-        CurrentScreen::DistroSelect => render_distro_select(f, app, chunks[1]),
+        CurrentScreen::DistroFamilySelect => render_family_select(f, app, chunks[1]),
+        CurrentScreen::DistroVersionSelect => render_version_select(f, app, chunks[1]),
         CurrentScreen::UserCredentials => render_user_credentials(f, app, chunks[1]),
         CurrentScreen::Installing => render_installing(f, app, chunks[1]),
         CurrentScreen::Finished => render_finished(f, app, chunks[1]),
@@ -36,8 +37,9 @@ pub fn draw(f: &mut Frame, app: &mut App) {
 
     let footer_text = match app.current_screen {
         CurrentScreen::Dashboard => "q: Quit | i: Install New | UP/DOWN: Select Installed | ENTER: Launch",
+        CurrentScreen::DistroFamilySelect => "UP/DOWN: Select Family | ENTER: Choose | q/ESC: Back",
+        CurrentScreen::DistroVersionSelect => "UP/DOWN: Select Version | ENTER: Choose | ESC: Back",
         CurrentScreen::LaunchSelect => "UP/DOWN: Select User | ENTER: Start Shell | ESC: Cancel",
-        CurrentScreen::DistroSelect => "UP/DOWN to Navigate | ENTER to Install | ESC to Back",
         CurrentScreen::UserCredentials => "Type to input | ENTER to Switch/Confirm | ESC to Back",
         CurrentScreen::Installing => "Installing... Press 'q' to force quit",
         CurrentScreen::Finished => "Press ENTER to exit",
@@ -110,7 +112,7 @@ fn render_dashboard(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
     let list = List::new(items)
         .block(Block::default().title(title).borders(Borders::ALL))
         .highlight_style(Style::default().bg(Color::DarkGray).add_modifier(Modifier::BOLD))
-        .highlight_symbol(">> ");
+        .highlight_symbol("→ ");
 
     let mut state = ListState::default();
     if !app.installed_distros.is_empty() {
@@ -170,27 +172,50 @@ fn centered_rect(percent_x: u16, percent_y: u16, r: ratatui::layout::Rect) -> ra
         .split(popup_layout[1])[1]
 }
 
-fn render_distro_select(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
-    let items: Vec<ListItem> = app.distros
+fn render_family_select(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
+    let items: Vec<ListItem> = app.distro_families
         .iter()
-        .map(|d| {
-            let content = Line::from(vec![
-                Span::styled(format!("{} ", d.name), Style::default().add_modifier(Modifier::BOLD)),
-                Span::styled(format!("({})", d.version), Style::default().fg(Color::DarkGray)),
-            ]);
-            ListItem::new(content)
+        .map(|f| {
+            let count = f.variants.len();
+            ListItem::new(vec![
+                Line::from(Span::styled(format!(" {} ", f.name), Style::default().add_modifier(Modifier::BOLD))),
+                Line::from(Span::styled(format!("    {} ({} variants)", f.description, count), Style::default().fg(Color::Gray))),
+            ])
         })
         .collect();
 
-    let distros_list = List::new(items)
-        .block(Block::default().title(" Select Distribution ").borders(Borders::ALL))
-        .highlight_style(Style::default().bg(Color::Blue).fg(Color::White).add_modifier(Modifier::BOLD))
+    let list = List::new(items)
+        .block(Block::default().title(" Select Distribution Family ").borders(Borders::ALL))
+        .highlight_style(Style::default().bg(Color::Blue).fg(Color::Black).add_modifier(Modifier::BOLD))
         .highlight_symbol(">> ");
 
     let mut state = ListState::default();
-    state.select(Some(app.selected_distro_index));
+    state.select(Some(app.selected_family_index));
+    f.render_stateful_widget(list, area, &mut state);
+}
 
-    f.render_stateful_widget(distros_list, area, &mut state);
+fn render_version_select(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
+    let family = &app.distro_families[app.selected_family_index];
+
+    let items: Vec<ListItem> = family.variants
+        .iter()
+        .map(|d| {
+            ListItem::new(Line::from(vec![
+                Span::styled(format!("{} ", d.name), Style::default().add_modifier(Modifier::BOLD)),
+                Span::styled(format!("({})", d.version), Style::default().fg(Color::DarkGray)),
+            ]))
+        })
+        .collect();
+
+    let title = format!(" Select {} Version ", family.name);
+    let list = List::new(items)
+        .block(Block::default().title(title).borders(Borders::ALL))
+        .highlight_style(Style::default().bg(Color::Green).fg(Color::Black).add_modifier(Modifier::BOLD))
+        .highlight_symbol("→ ");
+
+    let mut state = ListState::default();
+    state.select(Some(app.selected_version_index));
+    f.render_stateful_widget(list, area, &mut state);
 }
 
 fn render_installing(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
