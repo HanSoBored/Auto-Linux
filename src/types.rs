@@ -1,4 +1,4 @@
-use crate::core::{device::DeviceInfo, distro::Distro};
+use crate::core::{device::DeviceInfo, distro::{Distro, DistroFamily}};
 use std::sync::mpsc::Receiver;
 use crate::core::install::InstallState;
 use std::path::PathBuf;
@@ -6,7 +6,7 @@ use std::path::PathBuf;
 #[derive(Debug, Clone)]
 pub struct InstalledDistro {
     pub name: String,
-    #[allow(dead_code)] // Suppress warning field never read
+    #[allow(dead_code)]
     pub path: PathBuf,
     pub script_path: PathBuf,
     pub users: Vec<String>,
@@ -15,7 +15,8 @@ pub struct InstalledDistro {
 #[derive(Debug, Clone)]
 pub enum CurrentScreen {
     Dashboard,
-    DistroSelect,
+    DistroFamilySelect,
+    DistroVersionSelect,
     UserCredentials,
     Installing,
     Finished,
@@ -32,8 +33,9 @@ pub struct App {
     pub device: DeviceInfo,
     pub current_screen: CurrentScreen,
 
-    pub distros: Vec<Distro>,
-    pub selected_distro_index: usize,
+    pub distro_families: Vec<DistroFamily>,
+    pub selected_family_index: usize,
+    pub selected_version_index: usize,
 
     pub installed_distros: Vec<InstalledDistro>,
     pub selected_installed_index: usize,
@@ -51,14 +53,15 @@ pub struct App {
 impl App {
     pub fn new() -> Self {
         let device = DeviceInfo::new();
-        let distros = Distro::get_ubuntu_flavors(&device.arch);
+        let distro_families = Distro::get_all_families(&device.arch);
         let installed_distros = Distro::scan_installed_distros();
 
         Self {
             device,
             current_screen: CurrentScreen::Dashboard,
-            distros,
-            selected_distro_index: 0,
+            distro_families,
+            selected_family_index: 0,
+            selected_version_index: 0,
 
             installed_distros,
             selected_installed_index: 0,
@@ -77,38 +80,56 @@ impl App {
         self.installed_distros = Distro::scan_installed_distros();
     }
 
-    pub fn next_distro(&mut self) {
-        if self.selected_distro_index < self.distros.len() - 1 {
-            self.selected_distro_index += 1;
+    pub fn next_family(&mut self) {
+        if !self.distro_families.is_empty() && self.selected_family_index < self.distro_families.len() - 1 {
+            self.selected_family_index += 1;
         }
     }
 
-    pub fn previous_distro(&mut self) {
-        if self.selected_distro_index > 0 {
-            self.selected_distro_index -= 1;
+    pub fn previous_family(&mut self) {
+        if self.selected_family_index > 0 {
+            self.selected_family_index -= 1;
         }
+    }
+
+    pub fn next_version(&mut self) {
+        if let Some(family) = self.distro_families.get(self.selected_family_index) {
+            if !family.variants.is_empty() && self.selected_version_index < family.variants.len() - 1 {
+                self.selected_version_index += 1;
+            }
+        }
+    }
+
+    pub fn previous_version(&mut self) {
+        if self.selected_version_index > 0 {
+            self.selected_version_index -= 1;
+        }
+    }
+
+    pub fn get_selected_distro(&self) -> Option<&Distro> {
+        self.distro_families.get(self.selected_family_index)
+            .and_then(|f| f.variants.get(self.selected_version_index))
     }
 
     pub fn start_install(&mut self) {
-        let distro = self.distros[self.selected_distro_index].clone();
-        let username = self.input_username.clone();
-        let password = self.input_password.clone();
-
-        use std::sync::mpsc::channel;
-        use std::thread;
-        let (tx, rx) = channel();
-        self.install_rx = Some(rx);
-        self.current_screen = CurrentScreen::Installing;
-
-        thread::spawn(move || {
-            let result = crate::core::install::install_distro(&distro, &username, &password, |state| {
-                let _ = tx.send(state);
-            });
-
-            if let Err(e) = result {
-                let _ = tx.send(InstallState::Error(e.to_string()));
-            }
-        });
+        if let Some(distro_ref) = self.get_selected_distro() {
+            let distro = distro_ref.clone();
+             let username = self.input_username.clone();
+             let password = self.input_password.clone();
+             use std::sync::mpsc::channel;
+             use std::thread;
+             let (tx, rx) = channel();
+             self.install_rx = Some(rx);
+             self.current_screen = CurrentScreen::Installing;
+             thread::spawn(move || {
+                let result = crate::core::install::install_distro(&distro, &username, &password, |state| {
+                    let _ = tx.send(state);
+                });
+                if let Err(e) = result {
+                    let _ = tx.send(InstallState::Error(e.to_string()));
+                }
+             });
+        }
     }
 
     pub fn update_install_state(&mut self) {
