@@ -83,7 +83,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     CurrentScreen::Dashboard => {
                         match key.code {
                             KeyCode::Char('q') => break,
-                            KeyCode::Char('i') => app.current_screen = CurrentScreen::DistroSelect,
+                            KeyCode::Char('i') => {
+                                app.current_screen = CurrentScreen::DistroFamilySelect;
+                                app.selected_family_index = 0;
+                            },
                             KeyCode::Down | KeyCode::Char('j') => {
                                 if !app.installed_distros.is_empty() {
                                     let next = (app.selected_installed_index + 1) % app.installed_distros.len();
@@ -104,6 +107,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 if !app.installed_distros.is_empty() {
                                     app.selected_launch_user_index = 0;
                                     app.current_screen = CurrentScreen::LaunchSelect;
+                                }
+                            },
+                            _ => {}
+                        }
+                    },
+                    CurrentScreen::DistroFamilySelect => {
+                        match key.code {
+                            KeyCode::Esc | KeyCode::Char('q') => app.current_screen = CurrentScreen::Dashboard,
+
+                            KeyCode::Down | KeyCode::Char('j') => app.next_family(),
+                            KeyCode::Up | KeyCode::Char('k') => app.previous_family(),
+
+                            KeyCode::Enter => {
+                                app.selected_version_index = 0;
+                                if !app.distro_families[app.selected_family_index].variants.is_empty() {
+                                    app.current_screen = CurrentScreen::DistroVersionSelect;
                                 }
                             },
                             _ => {}
@@ -161,11 +180,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             _ => {}
                         }
                     },
-                    CurrentScreen::DistroSelect => {
+                    CurrentScreen::DistroVersionSelect => {
                         match key.code {
-                            KeyCode::Char('q') | KeyCode::Esc => app.current_screen = CurrentScreen::Dashboard,
-                            KeyCode::Down | KeyCode::Char('j') => app.next_distro(),
-                            KeyCode::Up | KeyCode::Char('k') => app.previous_distro(),
+                            KeyCode::Esc => app.current_screen = CurrentScreen::DistroFamilySelect,
+
+                            KeyCode::Down | KeyCode::Char('j') => app.next_version(),
+                            KeyCode::Up | KeyCode::Char('k') => app.previous_version(),
+
                             KeyCode::Enter => {
                                 app.input_username.clear();
                                 app.input_password.clear();
@@ -177,7 +198,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     },
                     CurrentScreen::UserCredentials => {
                         match key.code {
-                            KeyCode::Esc => app.current_screen = CurrentScreen::DistroSelect,
+                            KeyCode::Esc => app.current_screen = CurrentScreen::DistroVersionSelect,
                             KeyCode::Enter => {
                                 match app.input_mode {
                                     InputMode::Username => {
