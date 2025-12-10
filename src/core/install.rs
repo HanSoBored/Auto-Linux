@@ -50,7 +50,7 @@ pub fn install_distro(
     password: &str,
     callback: impl Fn(InstallState)
 ) -> Result<(), Box<dyn std::error::Error>> {
-    
+
     callback(InstallState::Starting);
 
     let folder_name = format!("{}-{}-{}",
