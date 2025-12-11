@@ -5,6 +5,7 @@ use std::process::Command;
 use crate::core::distro::Distro;
 use crate::{log_info, log_error};
 use flate2::read::GzDecoder;
+use xz2::read::XzDecoder;
 use tar::Archive;
 use std::net::SocketAddr;
 
@@ -67,7 +68,10 @@ pub fn install_distro(
     fs::create_dir_all(&install_path)?;
 
     callback(InstallState::Downloading(0.0));
-    let tar_path = install_path.join("rootfs.tar.gz");
+
+    let is_xz = distro.url.ends_with(".xz");
+    let filename = if is_xz { "rootfs.tar.xz" } else { "rootfs.tar.gz" };
+    let tar_path = install_path.join(filename);
 
     log_info!("Downloading from: {}", distro.url);
 
@@ -116,16 +120,36 @@ pub fn install_distro(
 
     log_info!("Extracting archive...");
     callback(InstallState::Extracting);
-    let tar_gz = File::open(&tar_path)?;
-    let tar = GzDecoder::new(tar_gz);
-    let mut archive = Archive::new(tar);
+
+    let tar_file = File::open(&tar_path)?;
+
+    let decoder: Box<dyn Read> = if is_xz {
+        log_info!("Detected XZ compression.");
+        Box::new(XzDecoder::new(tar_file))
+    } else {
+        log_info!("Detected Gzip compression.");
+        Box::new(GzDecoder::new(tar_file))
+    };
+
+    let mut archive = Archive::new(decoder);
 
     archive.set_preserve_permissions(true);
     archive.set_preserve_mtime(true);
-    archive.unpack(&install_path)?;
+    match archive.unpack(&install_path) {
+        Ok(_) => {},
+        Err(e) => {
+            log_error!("Extraction Failed: {}", e);
+            return Err(format!("Extraction Failed: {}", e).into());
+        }
+    }
 
     fs::remove_file(&tar_path)?;
     log_info!("Extraction complete. Removed temporary archive.");
+
+    log_info!("Checking directory structure...");
+    if let Err(e) = flatten_nested_rootfs(&install_path) {
+        log_error!("Failed to flatten rootfs: {}", e);
+    }
 
     log_info!("Generating config files...");
     callback(InstallState::Configuring);
@@ -177,6 +201,35 @@ fn resolve_hostname_via_android(hostname: &str) -> Result<String, String> {
 
     Err(format!("Could not parse IP from ping output: {}", stdout))
 }
+
+fn flatten_nested_rootfs(path: &Path) -> std::io::Result<()> {
+    let entries = fs::read_dir(path)?
+        .map(|res| res.map(|e| e.path()))
+        .collect::<Result<Vec<_>, std::io::Error>>()?;
+
+    if entries.len() == 1 && entries[0].is_dir() {
+        let nested_dir = entries[0].clone();
+        let nested_name = nested_dir.file_name().unwrap().to_string_lossy();
+
+        log_info!("Nested rootfs detected in subfolder: '{}'. Moving files up...", nested_name);
+
+        let sub_entries = fs::read_dir(&nested_dir)?;
+
+        for entry in sub_entries {
+            let entry = entry?;
+            let file_name = entry.file_name();
+            let dest_path = path.join(&file_name);
+
+            fs::rename(entry.path(), dest_path)?;
+        }
+
+        fs::remove_dir(nested_dir)?;
+        log_info!("Rootfs flattened successfully.");
+    }
+
+    Ok(())
+}
+
 
 fn generate_start_script(script_path: &Path, install_path: &Path, distro_name: &str) -> io::Result<()> {
     let path_str = install_path.to_string_lossy();
@@ -301,26 +354,58 @@ export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 echo ">>> Configuring Sudo Access..."
 if [ -f /etc/sudoers ]; then
-    echo '%wheel ALL=(ALL:ALL) ALL' >> /etc/sudoers
+    # Pastikan wheel diizinkan (untuk kompatibilitas Arch/Alpine/Kali)
+    if ! grep -q "%wheel ALL=(ALL:ALL) ALL" /etc/sudoers; then
+        echo '%wheel ALL=(ALL:ALL) ALL' >> /etc/sudoers
+    fi
 fi
 
-echo ">>> Configuring Network Groups..."
-groupadd -g 3003 aid_inet || true
-groupadd -g 3004 aid_net_raw || true
-groupadd -g 1003 aid_graphics || true
+echo ">>> Configuring Network Groups (Robust Mode)..."
+
+ensure_group() {{
+    NAME=$1
+    GID=$2
+
+    if grep -q "^$NAME:" /etc/group; then
+        echo "Group '$NAME' already exists. OK."
+        return
+    fi
+
+    if groupadd -g $GID $NAME 2>/dev/null; then
+        echo "Group '$NAME' created with GID $GID."
+    else
+        echo "GID $GID taken. Creating '$NAME' with auto-GID."
+        groupadd $NAME
+    fi
+}}
+
+ensure_group aid_inet 3003
+ensure_group aid_net_raw 3004
+ensure_group aid_graphics 1003
 
 if [ -f /etc/debian_version ]; then
-    usermod -g 3003 -G 3003,3004 -a _apt 2>/dev/null || true
+    # Pastikan user _apt ada sebelum dimodifikasi
+    if id "_apt" >/dev/null 2>&1; then
+        usermod -g 3003 -G 3003,3004 -a _apt 2>/dev/null || true
+    fi
 fi
-usermod -G 3003 -a root
+usermod -G 3003 -a root 2>/dev/null || true
 
 echo ">>> Creating User '{1}'..."
-groupadd storage || true
-groupadd wheel || true
+ensure_group storage 107
+ensure_group wheel 108
 
 useradd -m -g users -G wheel,audio,video,storage,aid_inet -s /bin/bash {1}
 
 echo "{1}:{2}" | chpasswd
+if [ $? -ne 0 ]; then
+    echo "[WARN] chpasswd failed. Trying usermod fallback..."
+    # Fallback method (needs openssl, usually available)
+    if command -v openssl >/dev/null; then
+        pass=$(openssl passwd -1 "{2}")
+        usermod -p "$pass" {1}
+    fi
+fi
 
 echo ">>> Done!"
 "#, package_logic, username, password);
