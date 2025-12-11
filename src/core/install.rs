@@ -185,7 +185,7 @@ fn generate_start_script(script_path: &Path, install_path: &Path, distro_name: &
     let shell_cmd = if is_alpine { "/bin/sh" } else { "/bin/bash" };
 
     let content = format!(r#"#!/bin/sh
-UBUNTUPATH="{}"
+DISTROPATH="{}"
 TARGET_USER="${{1:-root}}"
 
 mnt() {{
@@ -199,41 +199,45 @@ mnt() {{
 echo "[*] Mounting system folders..."
 mnt -o remount,dev,suid /data
 
-[ ! -d "$UBUNTUPATH/dev/shm" ] && mkdir -p "$UBUNTUPATH/dev/shm"
+[ ! -d "$DISTROPATH/dev" ] && mkdir -p "$DISTROPATH/dev"
+[ ! -d "$DISTROPATH/dev/pts" ] && mkdir -p "$DISTROPATH/dev/pts"
+[ ! -d "$DISTROPATH/dev/shm" ] && mkdir -p "$DISTROPATH/dev/shm"
+[ ! -d "$DISTROPATH/proc" ] && mkdir -p "$DISTROPATH/proc"
+[ ! -d "$DISTROPATH/sys" ] && mkdir -p "$DISTROPATH/sys"
+[ ! -d "$DISTROPATH/sdcard" ] && mkdir -p "$DISTROPATH/sdcard"
 
-mnt --bind /dev "$UBUNTUPATH/dev"
-mnt --bind /sys "$UBUNTUPATH/sys"
-mnt --bind /proc "$UBUNTUPATH/proc"
-mnt -t devpts devpts "$UBUNTUPATH/dev/pts"
-mnt -t tmpfs -o size=256M tmpfs "$UBUNTUPATH/dev/shm"
-mnt --bind /sdcard "$UBUNTUPATH/sdcard"
+mnt --bind /dev "$DISTROPATH/dev"
+mnt --bind /sys "$DISTROPATH/sys"
+mnt --bind /proc "$DISTROPATH/proc"
+mnt -t devpts devpts "$DISTROPATH/dev/pts"
+mnt -t tmpfs -o size=256M tmpfs "$DISTROPATH/dev/shm"
+mnt --bind /sdcard "$DISTROPATH/sdcard"
 
-for pam_file in "$UBUNTUPATH/etc/pam.d/su" "$UBUNTUPATH/etc/pam.d/su-l"; do
+for pam_file in "$DISTROPATH/etc/pam.d/su" "$DISTROPATH/etc/pam.d/su-l"; do
   if [ -f "$pam_file" ]; then
     sed -i 's/^\(session.*pam_keyinit.so\)/#\1/' "$pam_file"
   fi
 done
 
-if [ -f "$UBUNTUPATH/root/finalize_setup.sh" ]; then
+if [ -f "$DISTROPATH/root/finalize_setup.sh" ]; then
     echo "[!] First time setup detected. Configuring users & groups..."
-    chmod +x "$UBUNTUPATH/root/finalize_setup.sh"
+    chmod +x "$DISTROPATH/root/finalize_setup.sh"
 
-    # FIX 1: Gunakan shell yang sesuai distro untuk setup
     if [ -x "$(command -v busybox)" ]; then
-        busybox chroot "$UBUNTUPATH" {} /root/finalize_setup.sh
+        busybox chroot "$DISTROPATH" {} /root/finalize_setup.sh
     else
-        /system/bin/chroot "$UBUNTUPATH" {} /root/finalize_setup.sh
+        /system/bin/chroot "$DISTROPATH" {} /root/finalize_setup.sh
     fi
-    rm "$UBUNTUPATH/root/finalize_setup.sh"
+    rm "$DISTROPATH/root/finalize_setup.sh"
 fi
 
 echo "[*] Entering Chroot as $TARGET_USER..."
 echo "Type 'exit' to leave."
 
 if [ -x "$(command -v busybox)" ]; then
-    busybox chroot "$UBUNTUPATH" /bin/su - "$TARGET_USER"
+    busybox chroot "$DISTROPATH" /bin/su - "$TARGET_USER"
 else
-    /system/bin/chroot "$UBUNTUPATH" /bin/su - "$TARGET_USER"
+    /system/bin/chroot "$DISTROPATH" /bin/su - "$TARGET_USER"
 fi
 "#, path_str, shell_cmd, shell_cmd);
 
@@ -247,7 +251,9 @@ fi
 }
 
 fn generate_internal_setup_script(install_path: &Path, username: &str, password: &str, distro_name: &str) -> io::Result<()> {
-    let is_alpine = distro_name.to_lowercase().contains("alpine");
+    let name_lower = distro_name.to_lowercase();
+    let is_alpine = name_lower.contains("alpine");
+    let is_arch = name_lower.contains("arch");
 
     let package_logic = if is_alpine {
         r#"
@@ -258,6 +264,25 @@ apk update
 
 echo ">>> (Alpine) Installing Base Tools..."
 apk add bash shadow sudo nano net-tools git
+"#
+    } else if is_arch {
+        r#"
+echo ">>> (Arch Linux) Configuring Pacman for Android..."
+sed -i 's/^DownloadUser/#DownloadUser/' /etc/pacman.conf
+sed -i 's/^#DisableSandbox/DisableSandbox/' /etc/pacman.conf
+sed -i 's/^CheckSpace/#CheckSpace/' /etc/pacman.conf
+
+userdel -r alarm 2>/dev/null || true
+
+echo ">>> (Arch Linux) Initializing Pacman Keyring..."
+pacman-key --init
+pacman-key --populate archlinuxarm
+
+echo ">>> (Arch Linux) Updating Repository..."
+pacman -Sy --noconfirm
+
+echo ">>> (Arch Linux) Installing Tools..."
+pacman -S --noconfirm sudo nano net-tools git base-devel
 "#
     } else {
         r#"
@@ -275,14 +300,11 @@ export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 {}
 
 echo ">>> Configuring Sudo Access..."
-# Izinkan group 'wheel' untuk menggunakan sudo
-# Kita append ke akhir file agar tidak merusak konfigurasi existing
 if [ -f /etc/sudoers ]; then
     echo '%wheel ALL=(ALL:ALL) ALL' >> /etc/sudoers
 fi
 
 echo ">>> Configuring Network Groups..."
-# Android GID mapping
 groupadd -g 3003 aid_inet || true
 groupadd -g 3004 aid_net_raw || true
 groupadd -g 1003 aid_graphics || true
