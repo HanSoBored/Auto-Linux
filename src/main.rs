@@ -5,6 +5,7 @@ mod ui;
 
 use std::env;
 use std::io;
+use std::path::PathBuf;
 use std::process::{Command, exit};
 use crossterm::{
     event::{self, Event, KeyCode},
@@ -34,6 +35,19 @@ fn try_elevate_privileges() {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let args: Vec<String> = env::args().collect();
+    if args.len() >= 3 && args[1] == "clean-xattr" {
+        let target_path = PathBuf::from(&args[2]);
+        println!(">>> (AutoLinux Internal) Stripping xattrs from: {:?}", target_path);
+
+        if let Err(e) = core::install::clean_security_xattrs_recursive(&target_path) {
+            eprintln!(">>> (AutoLinux Internal) Warning during cleanup: {}", e);
+        } else {
+            println!(">>> (AutoLinux Internal) Cleanup complete.");
+        }
+        return Ok(());
+    }
+
     core::logger::init();
 
     let device_info = core::device::DeviceInfo::new();
