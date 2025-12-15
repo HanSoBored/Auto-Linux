@@ -1,7 +1,9 @@
 use std::fs::{self, File};
-use std::io::{self, Write, Read};
+use std::io::{self, Write, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::ffi::CString;
+use std::os::unix::ffi::OsStrExt;
 use crate::core::distro::Distro;
 use crate::{log_info, log_error};
 use flate2::read::GzDecoder;
@@ -117,33 +119,22 @@ pub fn install_distro(
     log_info!("Extracting archive...");
     callback(InstallState::Extracting);
 
-    let tar_file = File::open(&tar_path)?;
-
-    let decoder: Box<dyn Read> = if is_xz {
-        log_info!("Detected XZ compression.");
-        Box::new(XzDecoder::new(tar_file))
-    } else {
-        log_info!("Detected Gzip compression.");
-        Box::new(GzDecoder::new(tar_file))
-    };
-
-    let mut archive = Archive::new(decoder);
-    archive.set_preserve_permissions(true);
-    archive.set_preserve_mtime(true);
-    match archive.unpack(&install_path) {
-        Ok(_) => {},
-        Err(e) => {
-            log_error!("Extraction Failed: {}", e);
-            return Err(format!("Extraction Failed: {}", e).into());
-        }
-    }
-
+    unpack_archive_generic(&tar_path, &install_path)?;
     fs::remove_file(&tar_path)?;
-    log_info!("Extraction complete. Removed temporary archive.");
+
+    if install_path.join("oci-layout").exists() || install_path.join("blobs").exists() {
+        log_info!("OCI/Container Image format detected (Fedora style). Processing layers...");
+        handle_oci_extraction(&install_path)?;
+    }
 
     log_info!("Checking directory structure...");
     if let Err(e) = flatten_nested_rootfs(&install_path) {
         log_error!("Failed to flatten rootfs: {}", e);
+    }
+
+    log_info!("Cleaning up security extended attributes (IMA/SELinux)...");
+    if let Err(e) = clean_security_xattrs_recursive(&install_path) {
+        log_error!("Warning: Failed to clean some xattrs: {}", e);
     }
 
     log_info!("Generating config files...");
@@ -190,6 +181,116 @@ pub fn install_distro(
 
     log_info!("Installation finished successfully at {:?}", install_path);
     callback(InstallState::Finished(start_script_path.to_string_lossy().to_string()));
+    Ok(())
+}
+
+fn unpack_archive_generic(archive_path: &Path, dest: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    let mut file = File::open(archive_path)?;
+
+    let mut magic = [0u8; 6];
+    if file.read(&mut magic).is_ok() {
+        file.seek(SeekFrom::Start(0))?;
+    }
+
+    let decoder: Box<dyn Read> = if magic[0] == 0xFD && magic[1] == 0x37 && magic[2] == 0x7A
+        && magic[3] == 0x58 && magic[4] == 0x5A && magic[5] == 0x00 {
+        log_info!("Format detected: XZ");
+        Box::new(XzDecoder::new(file))
+    } else if magic[0] == 0x1F && magic[1] == 0x8B {
+        log_info!("Format detected: Gzip");
+        Box::new(GzDecoder::new(file))
+    } else {
+        log_info!("Format unknown (Magic: {:?}), trying Gzip...", magic);
+        Box::new(GzDecoder::new(file))
+    };
+
+    let mut archive = Archive::new(decoder);
+    archive.set_preserve_permissions(true);
+    archive.set_preserve_mtime(true);
+    archive.unpack(dest)?;
+
+    Ok(())
+}
+
+fn handle_oci_extraction(base_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    let blobs_dir = base_path.join("blobs/sha256");
+    if !blobs_dir.exists() {
+        return Err("OCI 'blobs' directory not found.".into());
+    }
+
+    let mut max_size = 0;
+    let mut best_blob_path = PathBuf::new();
+    let mut found = false;
+
+    for entry in fs::read_dir(&blobs_dir)? {
+        let entry = entry?;
+        let meta = entry.metadata()?;
+        if meta.is_file() {
+            if meta.len() > max_size {
+                max_size = meta.len();
+                best_blob_path = entry.path();
+                found = true;
+            }
+        }
+    }
+
+    if !found {
+        return Err("No layers found in OCI image.".into());
+    }
+
+    log_info!("Found rootfs layer: {:?} (Size: {} bytes)", best_blob_path, max_size);
+
+    let temp_layer_path = base_path.join("rootfs_layer.tar.gz");
+    fs::rename(&best_blob_path, &temp_layer_path)?;
+
+    for entry in fs::read_dir(base_path)? {
+        let entry = entry?;
+        if entry.path() != temp_layer_path {
+            if entry.path().is_dir() {
+                fs::remove_dir_all(entry.path())?;
+            } else {
+                fs::remove_file(entry.path())?;
+            }
+        }
+    }
+
+    log_info!("Extracting inner rootfs layer...");
+    unpack_archive_generic(&temp_layer_path, base_path)?;
+
+    fs::remove_file(temp_layer_path)?;
+
+    Ok(())
+}
+
+pub fn clean_security_xattrs_recursive(path: &Path) -> io::Result<()> {
+    if let Ok(entries) = fs::read_dir(path) {
+        for entry in entries {
+            if let Ok(entry) = entry {
+                let path = entry.path();
+                let file_type = entry.file_type()?;
+
+                if file_type.is_dir() {
+                    if let Some(name) = path.file_name() {
+                        let name_str = name.to_string_lossy();
+                        if name_str == "proc" || name_str == "sys" || name_str == "dev" || name_str == "sdcard" {
+                            continue;
+                        }
+                    }
+                    let _ = clean_security_xattrs_recursive(&path);
+                }
+
+                unsafe {
+                    let p_cstr = CString::new(path.as_os_str().as_bytes()).unwrap();
+                    let ima = CString::new("security.ima").unwrap();
+                    libc::lremovexattr(p_cstr.as_ptr(), ima.as_ptr());
+                    let selinux = CString::new("security.selinux").unwrap();
+                    libc::lremovexattr(p_cstr.as_ptr(), selinux.as_ptr());
+                    let cap = CString::new("security.capability").unwrap();
+                    libc::lremovexattr(p_cstr.as_ptr(), cap.as_ptr());
+                }
+            }
+        }
+    }
     Ok(())
 }
 
@@ -240,10 +341,12 @@ fn flatten_nested_rootfs(path: &Path) -> std::io::Result<()> {
 fn generate_start_script(script_path: &Path, install_path: &Path, distro_name: &str) -> io::Result<()> {
     let path_str = install_path.to_string_lossy();
     let is_alpine = distro_name.to_lowercase().contains("alpine");
-
     let shell_cmd = if is_alpine { "/bin/sh" } else { "/bin/bash" };
 
-    let content = format!(r#"#!/bin/sh
+    let current_exe = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("/data/local/tmp/autolinux"));
+    let exe_str = current_exe.to_string_lossy();
+
+    let content = format!(r##"#!/bin/sh
 DISTROPATH="{}"
 TARGET_USER="${{1:-root}}"
 
@@ -272,11 +375,17 @@ mnt -t devpts devpts "$DISTROPATH/dev/pts"
 mnt -t tmpfs -o size=256M tmpfs "$DISTROPATH/dev/shm"
 mnt --bind /sdcard "$DISTROPATH/sdcard"
 
-for pam_file in "$DISTROPATH/etc/pam.d/su" "$DISTROPATH/etc/pam.d/su-l"; do
-  if [ -f "$pam_file" ]; then
-    sed -i 's/^\(session.*pam_keyinit.so\)/#\1/' "$pam_file"
-  fi
-done
+if [ -d "$DISTROPATH/etc/pam.d" ]; then
+    echo "#%PAM-1.0
+auth       sufficient   pam_rootok.so
+auth       required     pam_permit.so
+account    required     pam_permit.so
+session    required     pam_env.so
+session    optional     pam_xauth.so
+session    required     pam_permit.so" > "$DISTROPATH/etc/pam.d/su"
+
+    cp "$DISTROPATH/etc/pam.d/su" "$DISTROPATH/etc/pam.d/su-l"
+fi
 
 if [ -f "$DISTROPATH/root/finalize_setup.sh" ]; then
     echo "[!] First time setup detected. Configuring users & groups..."
@@ -287,24 +396,35 @@ if [ -f "$DISTROPATH/root/finalize_setup.sh" ]; then
     else
         /system/bin/chroot "$DISTROPATH" {} /root/finalize_setup.sh
     fi
+
+    echo "[*] Performing Host-Side Security Cleanup (Fedora Fix)..."
+    "{}" clean-xattr "$DISTROPATH"
+
     rm "$DISTROPATH/root/finalize_setup.sh"
 fi
 
 echo "[*] Entering Chroot as $TARGET_USER..."
 echo "Type 'exit' to leave."
 
-if [ -x "$(command -v busybox)" ]; then
-    busybox chroot "$DISTROPATH" /bin/su - "$TARGET_USER"
+if [ -f "$DISTROPATH/usr/bin/su" ]; then
+    SU_CMD="/usr/bin/su"
 else
-    /system/bin/chroot "$DISTROPATH" /bin/su - "$TARGET_USER"
+    SU_CMD="/bin/su"
 fi
-"#, path_str, shell_cmd, shell_cmd);
+
+if [ -x "$(command -v busybox)" ]; then
+    busybox chroot "$DISTROPATH" $SU_CMD - "$TARGET_USER"
+else
+    /system/bin/chroot "$DISTROPATH" $SU_CMD - "$TARGET_USER"
+fi
+"##, path_str, shell_cmd, shell_cmd, exe_str);
 
     fs::write(script_path, content)?;
     use std::os::unix::fs::PermissionsExt;
     let mut perms = fs::metadata(script_path)?.permissions();
     perms.set_mode(0o755);
     fs::set_permissions(script_path, perms)?;
+
     Ok(())
 }
 
@@ -321,33 +441,28 @@ echo ">>> (Alpine) Updating Repository..."
 echo "http://dl-cdn.alpinelinux.org/alpine/edge/main" > /etc/apk/repositories
 echo "http://dl-cdn.alpinelinux.org/alpine/edge/community" >> /etc/apk/repositories
 apk update
-
 echo ">>> (Alpine) Installing Base Tools..."
 apk add bash shadow sudo nano net-tools git
 "#
     } else if is_arch {
         r#"
-echo ">>> (Arch Linux) Configuring Pacman for Android..."
+echo ">>> (Arch Linux) Configuring Pacman..."
 sed -i 's/^DownloadUser/#DownloadUser/' /etc/pacman.conf
 sed -i 's/^#DisableSandbox/DisableSandbox/' /etc/pacman.conf
 sed -i 's/^CheckSpace/#CheckSpace/' /etc/pacman.conf
 userdel -r alarm 2>/dev/null || true
-
-echo ">>> (Arch Linux) Initializing Pacman Keyring..."
+echo ">>> (Arch Linux) Init Keyring..."
 pacman-key --init
 pacman-key --populate archlinuxarm
-
-echo ">>> (Arch Linux) Updating Repository..."
+echo ">>> (Arch Linux) Updating..."
 pacman -Sy --noconfirm
-
 echo ">>> (Arch Linux) Installing Tools..."
 pacman -S --noconfirm sudo nano net-tools git base-devel
 "#
     } else if is_void {
         r#"
-echo ">>> (Void Linux) Updating Repository..."
+echo ">>> (Void Linux) Updating..."
 xbps-install -S
-
 echo ">>> (Void Linux) Installing Tools..."
 xbps-install -y -S sudo nano net-tools git bash shadow ca-certificates
 "#
@@ -355,66 +470,56 @@ xbps-install -y -S sudo nano net-tools git bash shadow ca-certificates
         r#"
 echo ">>> (Fedora) Updating Repository..."
 dnf update -y
-
 echo ">>> (Fedora) Installing Tools..."
-dnf install -y nano net-tools sudo git passwd shadow-utils
+dnf install -y nano net-tools sudo git passwd shadow-utils util-linux attr findutils
 "#
     } else {
         r#"
-echo ">>> (Debian/Ubuntu/Kali/Parrot) Updating Repository..."
+echo ">>> (Debian/Ubuntu/Kali) Updating..."
 apt update -y
-
-echo ">>> (Debian/Ubuntu/Kali/Parrot) Installing Tools..."
+echo ">>> (Debian/Ubuntu/Kali) Installing Tools..."
 apt install -y nano net-tools sudo git
 "#
     };
 
     let content = format!(r#"#!/bin/sh
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+unset TMPDIR TMP TEMP
+export LC_ALL=C
+mkdir -p /tmp
+chmod 1777 /tmp
+
 {}
+
 echo ">>> Configuring Sudo Access..."
-if [ -d /etc/sudoers.d ]; then
-    echo '%wheel ALL=(ALL) ALL' > /etc/sudoers.d/wheel
-    chmod 0440 /etc/sudoers.d/wheel
-else
-    echo '%wheel ALL=(ALL) ALL' >> /etc/sudoers
+if [ -f /etc/sudoers ]; then
+    echo '%wheel ALL=(ALL:ALL) ALL' >> /etc/sudoers
 fi
 
-echo ">>> Configuring Network Groups (Robust Mode)..."
+echo ">>> Configuring Network Groups..."
+sed -i '/:3003:/d' /etc/group
+sed -i '/:3004:/d' /etc/group
+sed -i '/:1003:/d' /etc/group
+sed -i '/^aid_inet:/d' /etc/group
+sed -i '/^aid_net_raw:/d' /etc/group
+sed -i '/^aid_graphics:/d' /etc/group
 
-ensure_group() {{
-    NAME=$1
-    GID=$2
-
-    if grep -q "^$NAME:" /etc/group; then
-        echo "Group '$NAME' already exists. OK."
-        return
-    fi
-
-    if groupadd -g $GID $NAME 2>/dev/null; then
-        echo "Group '$NAME' created with GID $GID."
-    else
-        echo "GID $GID taken. Creating '$NAME' with auto-GID."
-        groupadd $NAME
-    fi
-}}
-
-ensure_group aid_inet 3003
-ensure_group aid_net_raw 3004
-ensure_group aid_graphics 1003
+groupadd -g 3003 aid_inet
+groupadd -g 3004 aid_net_raw
+groupadd -g 1003 aid_graphics
 
 if [ -f /etc/debian_version ]; then
-    if id "_apt" >/dev/null 2>&1; then
-        usermod -g 3003 -G 3003,3004 -a _apt 2>/dev/null || true
-    fi
+    usermod -g 3003 -G 3003,3004 -a _apt 2>/dev/null || true
 fi
+usermod -a -G aid_inet root 2>/dev/null || usermod -G 3003 -a root
 
-usermod -G 3003 -a root 2>/dev/null || true
 echo ">>> Creating User '{1}'..."
-ensure_group storage 107
-ensure_group wheel 108
+groupadd storage 2>/dev/null || true
+groupadd wheel 2>/dev/null || true
+
 useradd -m -g users -G wheel,audio,video,storage,aid_inet -s /bin/bash {1}
-echo "{1}:{2}" | chpasswd -c SHA512
+echo "{1}:{2}" | chpasswd
+
 echo ">>> Done!"
 "#, package_logic, username, password);
 
