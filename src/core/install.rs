@@ -60,8 +60,8 @@ pub fn install_distro(
         distro.version
     );
 
-    let install_path = PathBuf::from("/data/local").join(&folder_name);
-    let start_script_path = PathBuf::from("/data/local").join(format!("start-{}.sh", folder_name));
+    let install_path = PathBuf::from("/data/local/rootfs").join(&folder_name);
+    let start_script_path = PathBuf::from("/data/local/rootfs").join(format!("start-{}.sh", folder_name));
 
     if install_path.exists() {
         fs::remove_dir_all(&install_path)?;
@@ -343,7 +343,7 @@ fn generate_start_script(script_path: &Path, install_path: &Path, distro_name: &
     let is_alpine = distro_name.to_lowercase().contains("alpine");
     let shell_cmd = if is_alpine { "/bin/sh" } else { "/bin/bash" };
 
-    let current_exe = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("/data/local/tmp/autolinux"));
+    let current_exe = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("/data/local/rootfs/autolinux"));
     let exe_str = current_exe.to_string_lossy();
 
     let content = format!(r##"#!/bin/sh
