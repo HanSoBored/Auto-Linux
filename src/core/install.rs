@@ -123,7 +123,7 @@ pub fn install_distro(
     fs::remove_file(&tar_path)?;
 
     if install_path.join("oci-layout").exists() || install_path.join("blobs").exists() {
-        log_info!("OCI/Container Image format detected (Fedora style). Processing layers...");
+        log_info!("OCI/Container Image format detected. Processing layers...");
         handle_oci_extraction(&install_path)?;
     }
 
@@ -397,7 +397,7 @@ if [ -f "$DISTROPATH/root/finalize_setup.sh" ]; then
         /system/bin/chroot "$DISTROPATH" {} /root/finalize_setup.sh
     fi
 
-    echo "[*] Performing Host-Side Security Cleanup (Fedora Fix)..."
+    echo "[*] Performing Host-Side Security Cleanup..."
     "{}" clean-xattr "$DISTROPATH"
 
     rm "$DISTROPATH/root/finalize_setup.sh"
@@ -434,6 +434,26 @@ fn generate_internal_setup_script(install_path: &Path, username: &str, password:
     let is_arch = name_lower.contains("arch");
     let is_void = name_lower.contains("void");
     let is_fedora = name_lower.contains("fedora");
+    let is_debian_family = !is_alpine && !is_arch && !is_void && !is_fedora;
+
+    let network_groups_logic = r#"
+echo ">>> Configuring Network Groups..."
+sed -i '/:3003:/d' /etc/group
+sed -i '/:3004:/d' /etc/group
+sed -i '/:1003:/d' /etc/group
+sed -i '/^aid_inet:/d' /etc/group
+sed -i '/^aid_net_raw:/d' /etc/group
+sed -i '/^aid_graphics:/d' /etc/group
+
+groupadd -g 3003 aid_inet
+groupadd -g 3004 aid_net_raw
+groupadd -g 1003 aid_graphics
+
+if [ -f /etc/debian_version ]; then
+    usermod -g 3003 -G 3003,3004 -a _apt 2>/dev/null || true
+fi
+usermod -a -G aid_inet root 2>/dev/null || usermod -G 3003 -a root
+"#;
 
     let package_logic = if is_alpine {
         r#"
@@ -464,7 +484,7 @@ pacman -S --noconfirm sudo nano net-tools git base-devel
 echo ">>> (Void Linux) Updating..."
 xbps-install -S
 echo ">>> (Void Linux) Installing Tools..."
-xbps-install -y -S sudo nano net-tools git bash shadow ca-certificates
+xbps-install -y -S sudo nano net-tools git bash shadow ca-certificates openssl
 "#
     } else if is_fedora {
         r#"
@@ -482,6 +502,31 @@ apt install -y nano net-tools sudo git
 "#
     };
 
+    let user_creation_logic = if is_void {
+        format!(r#"
+echo ">>> Creating User '{0}'..."
+groupadd storage 2>/dev/null || true
+groupadd wheel 2>/dev/null || true
+useradd -m -g users -G wheel,audio,video,storage,aid_inet -s /bin/bash {0}
+PASS_HASH=$(echo "{1}" | openssl passwd -6 -stdin)
+echo "{0}:$PASS_HASH" | chpasswd -e
+"#, username, password)
+    } else {
+        format!(r#"
+echo ">>> Creating User '{0}'..."
+groupadd storage 2>/dev/null || true
+groupadd wheel 2>/dev/null || true
+useradd -m -g users -G wheel,audio,video,storage,aid_inet -s /bin/bash {0}
+echo "{0}:{1}" | chpasswd
+"#, username, password)
+    };
+
+    let ordered_logic = if is_debian_family {
+        format!("{}\n{}", network_groups_logic, package_logic)
+    } else {
+        format!("{}\n{}", package_logic, network_groups_logic)
+    };
+
     let content = format!(r#"#!/bin/sh
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 unset TMPDIR TMP TEMP
@@ -496,32 +541,10 @@ if [ -f /etc/sudoers ]; then
     echo '%wheel ALL=(ALL:ALL) ALL' >> /etc/sudoers
 fi
 
-echo ">>> Configuring Network Groups..."
-sed -i '/:3003:/d' /etc/group
-sed -i '/:3004:/d' /etc/group
-sed -i '/:1003:/d' /etc/group
-sed -i '/^aid_inet:/d' /etc/group
-sed -i '/^aid_net_raw:/d' /etc/group
-sed -i '/^aid_graphics:/d' /etc/group
-
-groupadd -g 3003 aid_inet
-groupadd -g 3004 aid_net_raw
-groupadd -g 1003 aid_graphics
-
-if [ -f /etc/debian_version ]; then
-    usermod -g 3003 -G 3003,3004 -a _apt 2>/dev/null || true
-fi
-usermod -a -G aid_inet root 2>/dev/null || usermod -G 3003 -a root
-
-echo ">>> Creating User '{1}'..."
-groupadd storage 2>/dev/null || true
-groupadd wheel 2>/dev/null || true
-
-useradd -m -g users -G wheel,audio,video,storage,aid_inet -s /bin/bash {1}
-echo "{1}:{2}" | chpasswd
+{}
 
 echo ">>> Done!"
-"#, package_logic, username, password);
+"#, ordered_logic, user_creation_logic);
 
     let setup_path = install_path.join("root/finalize_setup.sh");
     fs::write(setup_path, content)?;
