@@ -16,7 +16,7 @@ pub fn get_family(arch: &str) -> DistroFamily {
                     url: format!("https://kali.download/nethunter-images/kali-2025.2/rootfs/kali-nethunter-rootfs-nano-{}.tar.xz", deb_arch),
             },
             Distro {
-                name: "Kali Linux 2025.3".to_string(), codename: "kali-rolling".to_string(), version: "2025.2".to_string(),
+                name: "Kali Linux 2025.3".to_string(), codename: "kali-rolling".to_string(), version: "2025.3".to_string(),
                     url: format!("https://kali.download/nethunter-images/kali-2025.3/rootfs/kali-nethunter-rootfs-nano-{}.tar.xz", deb_arch),
             },
             Distro {
