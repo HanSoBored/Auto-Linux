@@ -45,7 +45,7 @@ impl Distro {
 
     pub fn scan_installed_distros() -> Vec<InstalledDistro> {
         let mut results = Vec::new();
-        let base_path = PathBuf::from("/data/local");
+        let base_path = PathBuf::from("/data/local/rootfs");
         if let Ok(entries) = fs::read_dir(&base_path) {
             for entry in entries.flatten() {
                 let path = entry.path();
