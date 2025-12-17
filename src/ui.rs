@@ -25,10 +25,22 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     match app.current_screen {
         CurrentScreen::Dashboard => render_dashboard(f, app, chunks[1]),
         CurrentScreen::DistroFamilySelect => render_family_select(f, app, chunks[1]),
-        CurrentScreen::DistroVersionSelect => render_version_select(f, app, chunks[1]),
-        CurrentScreen::UserCredentials => render_user_credentials(f, app, chunks[1]),
-        CurrentScreen::Installing => render_installing(f, app, chunks[1]),
-        CurrentScreen::Finished => render_finished(f, app, chunks[1]),
+        CurrentScreen::DistroVersionSelect => {
+            render_family_select(f, app, chunks[1]);
+            render_version_select(f, app, chunks[1]);
+        }
+        CurrentScreen::UserCredentials => {
+            render_family_select(f, app, chunks[1]);
+            render_user_credentials(f, app, chunks[1]);
+        }
+        CurrentScreen::Installing => {
+            render_dashboard(f, app, chunks[1]);
+            render_installing(f, app, chunks[1]);
+        }
+        CurrentScreen::Finished => {
+            render_dashboard(f, app, chunks[1]);
+            render_finished(f, app, chunks[1]);
+        }
         CurrentScreen::LaunchSelect => {
             render_dashboard(f, app, chunks[1]);
             render_launch_select(f, app);
@@ -124,52 +136,107 @@ fn render_dashboard(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
 
 fn render_launch_select(f: &mut Frame, app: &App) {
     let distro = &app.installed_distros[app.selected_installed_index];
-
-    let block = Block::default().title(format!(" Launch: {} ", distro.name)).borders(Borders::ALL);
-    let area = centered_rect(60, 40, f.area());
-    f.render_widget(Clear, area);
-    f.render_widget(block, area);
-
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Length(2), Constraint::Min(1)])
-        .margin(1)
-        .split(area);
-
-    f.render_widget(Paragraph::new("Select user to login:"), chunks[0]);
+    let title = format!(" Launch: {} ", distro.name);
+    let instruction = "Select user to login:";
 
     let items: Vec<ListItem> = distro.users.iter().map(|u| {
         ListItem::new(format!("  User: {}", u))
     }).collect();
 
-    let list = List::new(items)
-        .highlight_style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
-        .highlight_symbol("> ");
+    let item_widths: Vec<usize> = distro.users.iter().map(|u| {
+        u.len() + 8 // "  User: {}" + "> "
+    }).collect();
 
-    let mut state = ListState::default();
-    state.select(Some(app.selected_launch_user_index));
-
-    f.render_stateful_widget(list, chunks[1], &mut state);
+    render_list_popup(
+        f,
+        &title,
+        Some(instruction),
+        items,
+        item_widths,
+        app.selected_launch_user_index,
+        Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+        "> ",
+    );
 }
 
-fn centered_rect(percent_x: u16, percent_y: u16, r: ratatui::layout::Rect) -> ratatui::layout::Rect {
+fn centered_rect_with_size(width: u16, height: u16, r: ratatui::layout::Rect) -> ratatui::layout::Rect {
     let popup_layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Percentage((100 - percent_y) / 2),
-            Constraint::Percentage(percent_y),
-            Constraint::Percentage((100 - percent_y) / 2),
+            Constraint::Length((r.height.saturating_sub(height)) / 2),
+            Constraint::Length(height),
+            Constraint::Length((r.height.saturating_sub(height)) / 2),
         ])
         .split(r);
 
     Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Percentage((100 - percent_x) / 2),
-            Constraint::Percentage(percent_x),
-            Constraint::Percentage((100 - percent_x) / 2),
+            Constraint::Length((r.width.saturating_sub(width)) / 2),
+            Constraint::Length(width),
+            Constraint::Length((r.width.saturating_sub(width)) / 2),
         ])
         .split(popup_layout[1])[1]
+}
+
+fn render_list_popup(
+    f: &mut Frame,
+    title: &str,
+    instruction: Option<&str>,
+    items: Vec<ListItem>,
+    item_widths: Vec<usize>,
+    selected_index: usize,
+    highlight_style: Style,
+    highlight_symbol: &str,
+) {
+    let instruction_len = instruction.map_or(0, |s| s.len());
+    let instruction_height = instruction.map_or(0, |_| 2); // Height for the instruction paragraph
+
+    // --- Calculate dynamic width ---
+    let max_item_width = item_widths.iter().max().copied().unwrap_or(0);
+    let mut content_width = std::cmp::max(max_item_width, title.len());
+    content_width = std::cmp::max(content_width, instruction_len);
+    // Add padding for borders and margin
+    let popup_width = std::cmp::max(content_width, 20) as u16 + 4;
+
+    // --- Calculate dynamic height ---
+    let mut popup_height = items.len() as u16 + instruction_height;
+    popup_height += 2; // for block borders
+    popup_height = popup_height.max(5); // Ensure a minimum height
+
+    let popup_area = centered_rect_with_size(popup_width, popup_height, f.area());
+    f.render_widget(Clear, popup_area);
+
+    let block = Block::default().title(title.to_string()).borders(Borders::ALL);
+    let inner_area = block.inner(popup_area);
+    f.render_widget(block, popup_area);
+
+    let constraints = if instruction.is_some() {
+        vec![Constraint::Length(instruction_height), Constraint::Min(0)]
+    } else {
+        vec![Constraint::Min(0)]
+    };
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .margin(1)
+        .constraints(constraints)
+        .split(popup_area);
+    
+    let list_area = if let Some(instr) = instruction {
+        f.render_widget(Paragraph::new(instr), chunks[0]);
+        chunks[1]
+    } else {
+        inner_area
+    };
+
+    let list = List::new(items)
+        .highlight_style(highlight_style)
+        .highlight_symbol(highlight_symbol);
+
+    let mut state = ListState::default();
+    state.select(Some(selected_index));
+    f.render_stateful_widget(list, list_area, &mut state);
 }
 
 fn render_family_select(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
@@ -186,7 +253,7 @@ fn render_family_select(f: &mut Frame, app: &mut App, area: ratatui::layout::Rec
 
     let list = List::new(items)
         .block(Block::default().title(" Select Distribution Family ").borders(Borders::ALL))
-        .highlight_style(Style::default().bg(Color::Blue).fg(Color::Black).add_modifier(Modifier::BOLD))
+        .highlight_style(Style::default().bg(Color::DarkGray).fg(Color::White).add_modifier(Modifier::BOLD))
         .highlight_symbol(">> ");
 
     let mut state = ListState::default();
@@ -194,8 +261,9 @@ fn render_family_select(f: &mut Frame, app: &mut App, area: ratatui::layout::Rec
     f.render_stateful_widget(list, area, &mut state);
 }
 
-fn render_version_select(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
+fn render_version_select(f: &mut Frame, app: &mut App, _area: ratatui::layout::Rect) {
     let family = &app.distro_families[app.selected_family_index];
+    let title = format!(" Select {} Version ", family.name);
 
     let items: Vec<ListItem> = family.variants
         .iter()
@@ -206,27 +274,42 @@ fn render_version_select(f: &mut Frame, app: &mut App, area: ratatui::layout::Re
             ]))
         })
         .collect();
+    
+    let item_widths: Vec<usize> = family.variants
+        .iter()
+        .map(|d| d.name.len() + d.version.len() + 5) // " name (version)" + highlight symbol
+        .collect();
 
-    let title = format!(" Select {} Version ", family.name);
-    let list = List::new(items)
-        .block(Block::default().title(title).borders(Borders::ALL))
-        .highlight_style(Style::default().bg(Color::Green).fg(Color::Black).add_modifier(Modifier::BOLD))
-        .highlight_symbol("→ ");
-
-    let mut state = ListState::default();
-    state.select(Some(app.selected_version_index));
-    f.render_stateful_widget(list, area, &mut state);
+    render_list_popup(
+        f,
+        &title,
+        None,
+        items,
+        item_widths,
+        app.selected_version_index,
+        Style::default().bg(Color::DarkGray).fg(Color::White).add_modifier(Modifier::BOLD),
+        "→ ",
+    );
 }
 
-fn render_installing(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
+fn render_installing(f: &mut Frame, app: &mut App, _area: ratatui::layout::Rect) {
+    let popup_width = 70;
+    let popup_height = 8;
+
+    let popup_area = centered_rect_with_size(popup_width, popup_height, f.area());
+    f.render_widget(Clear, popup_area);
+
+    let block = Block::default().title(" Installing Distro ").borders(Borders::ALL);
+    f.render_widget(block, popup_area);
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
+        .margin(1)
         .constraints([
             Constraint::Length(3),
             Constraint::Length(3),
         ])
-        .margin(2)
-        .split(area);
+        .split(popup_area);
 
     let status = Paragraph::new(app.install_status.clone())
         .style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
@@ -235,12 +318,18 @@ fn render_installing(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) 
 
     let gauge = Gauge::default()
         .block(Block::default().borders(Borders::ALL).title(" Progress "))
-        .gauge_style(Style::default().fg(Color::Green).bg(Color::Black))
-        .percent(app.install_progress as u16);
+        .gauge_style(Style::default().fg(Color::DarkGray).bg(Color::White))
+        .ratio((app.install_progress / 100.0) as f64);
     f.render_widget(gauge, chunks[1]);
 }
 
-fn render_finished(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
+fn render_finished(f: &mut Frame, app: &mut App, _area: ratatui::layout::Rect) {
+    let popup_width = 80;
+    let popup_height = 11;
+    let popup_area = centered_rect_with_size(popup_width, popup_height, f.area());
+
+    f.render_widget(Clear, popup_area);
+
     let text = vec![
         Line::from(Span::styled("Installation Complete!", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD))),
         Line::from(""),
@@ -251,20 +340,32 @@ fn render_finished(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
     ];
 
     let p = Paragraph::new(text)
-        .block(Block::default().borders(Borders::ALL).style(Style::default().fg(Color::White)));
-    f.render_widget(p, area);
+        .block(Block::default().title(" Finished ").borders(Borders::ALL).style(Style::default().fg(Color::White)))
+        .alignment(ratatui::layout::Alignment::Center)
+        .wrap(ratatui::widgets::Wrap { trim: false });
+        
+    f.render_widget(p, popup_area);
 }
 
-fn render_user_credentials(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
+fn render_user_credentials(f: &mut Frame, app: &mut App, _area: ratatui::layout::Rect) {
+    let popup_width = 65;
+    let popup_height = 10;
+
+    let popup_area = centered_rect_with_size(popup_width, popup_height, f.area());
+    f.render_widget(Clear, popup_area);
+
+    let block = Block::default().title(" Create New User ").borders(Borders::ALL);
+    f.render_widget(block, popup_area);
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
+        .margin(1)
         .constraints([
             Constraint::Length(3),
             Constraint::Length(3),
             Constraint::Min(1),
         ])
-        .margin(1)
-        .split(area);
+        .split(popup_area);
 
     let (user_color, pass_color) = match app.input_mode {
         InputMode::Username => (Color::Yellow, Color::White),
