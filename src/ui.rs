@@ -106,8 +106,21 @@ fn render_dashboard(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
     let items: Vec<ListItem> = app.installed_distros
         .iter()
         .map(|d| {
-            let user_count = d.users.len().saturating_sub(1);
-            let desc = format!("{} (Users: root + {})", d.name, user_count);
+            let (distro_display, version_display) = parse_distro_display_name(&d.name);
+
+            let mut display_name = distro_display;
+            if !version_display.is_empty() {
+                display_name = format!("{} ({})", display_name, version_display);
+            }
+
+            let user_desc = if d.users.len() > 1 {
+                let other_users: Vec<&str> = d.users.iter().filter(|&u| u != "root").map(|s| s.as_str()).collect();
+                format!("(root & {})", other_users.join(", "))
+            } else {
+                "(root)".to_string()
+            };
+
+            let desc = format!("{} {}", display_name, user_desc);
             ListItem::new(Line::from(vec![
                 Span::styled("   ", Style::default().fg(Color::Green)),
                 Span::raw(desc)
@@ -134,9 +147,57 @@ fn render_dashboard(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
     f.render_stateful_widget(list, chunks[1], &mut state);
 }
 
+fn parse_distro_display_name(name: &str) -> (String, String) {
+    let parts: Vec<&str> = name.split('-').collect();
+    if parts.is_empty() {
+        return (name.to_string(), "".to_string());
+    }
+
+    let mut unique_parts: Vec<&str> = Vec::new();
+    for part in parts.iter() {
+        if unique_parts.is_empty() || unique_parts.last().unwrap() != part {
+            unique_parts.push(part);
+        }
+    }
+
+    let mut distro_name_parts: Vec<String> = Vec::new();
+    let mut version_info_parts: Vec<String> = Vec::new();
+    let mut version_found = false;
+
+    distro_name_parts.push(
+        unique_parts[0].chars().next().unwrap().to_uppercase().to_string() + &unique_parts[0][1..]
+    );
+
+    for part in &unique_parts[1..] {
+        let is_version_keyword = *part == "rolling" || *part == "latest" || *part == "edge";
+        let is_numeric_version = part.chars().any(|c| c.is_digit(10));
+
+        if is_version_keyword || is_numeric_version {
+            version_found = true;
+        }
+
+        if version_found {
+            version_info_parts.push(
+                 part.chars().next().unwrap().to_uppercase().to_string() + &part[1..]
+            );
+        } else {
+            distro_name_parts.push(
+                part.chars().next().unwrap().to_uppercase().to_string() + &part[1..]
+            );
+        }
+    }
+    
+    (distro_name_parts.join(" "), version_info_parts.join("-"))
+}
+
 fn render_launch_select(f: &mut Frame, app: &App) {
     let distro = &app.installed_distros[app.selected_installed_index];
-    let title = format!(" Launch: {} ", distro.name);
+    let (distro_display, version_display) = parse_distro_display_name(&distro.name);
+    let mut display_name = distro_display;
+    if !version_display.is_empty() {
+        display_name = format!("{} ({})", display_name, version_display);
+    }
+    let title = format!(" Launch: {} ", display_name);
     let instruction = "Select user to login:";
 
     let items: Vec<ListItem> = distro.users.iter().map(|u| {
