@@ -23,6 +23,7 @@ var (
 	green  = lipgloss.Color("#04B575")
 	red    = lipgloss.Color("#FF4C4C")
 	blue   = lipgloss.Color("#00B2FF")
+	darkBG = lipgloss.Color("#1A1A2E")
 )
 
 // Define styles
@@ -35,20 +36,22 @@ var (
 			MarginBottom(1)
 
 	deviceStyle = lipgloss.NewStyle().
-			Foreground(gray).
+			Foreground(lipgloss.Color("#B8B8D1")).
 			Italic(true).
 			MarginBottom(1)
 
 	itemStyle = lipgloss.NewStyle().
-			PaddingLeft(2)
+			PaddingLeft(2).
+			Foreground(lipgloss.Color("#E0E0E0"))
 
 	selectedItemStyle = lipgloss.NewStyle().
 				PaddingLeft(0).
 				Foreground(purple).
-				Bold(true)
+				Bold(true).
+				Underline(true)
 
 	helpStyle = lipgloss.NewStyle().
-			Foreground(gray).
+			Foreground(lipgloss.Color("#6A6A8A")).
 			MarginTop(1)
 
 	statusStyle = lipgloss.NewStyle().
@@ -66,7 +69,8 @@ var (
 	borderStyle = lipgloss.NewStyle().
 			BorderStyle(lipgloss.RoundedBorder()).
 			BorderForeground(purple).
-			Padding(1, 2)
+			Padding(1, 2).
+			Background(darkBG)
 
 	headerStyle = lipgloss.NewStyle().
 			Foreground(purple).
@@ -143,6 +147,11 @@ func NewModel() model {
 	fl.SetShowStatusBar(false)
 	fl.SetFilteringEnabled(true)
 	fl.Styles.Title = titleStyle
+	// Enhanced list styles for v2
+	fl.Styles.PaginationStyle = selectedItemStyle
+	fl.Styles.HelpStyle = helpStyle
+	fl.Styles.ActivePaginationDot = lipgloss.NewStyle().Foreground(purple)
+	fl.Styles.InactivePaginationDot = lipgloss.NewStyle().Foreground(gray)
 
 	// Setup Spinner
 	s := spinner.New()
@@ -206,14 +215,44 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		
+
 		h, v := containerStyle.GetFrameSize()
 		m.familyList.SetSize(msg.Width-h-4, msg.Height-v-4)
 		if m.variantList.Width() > 0 {
 			m.variantList.SetSize(msg.Width-h-4, msg.Height-v-4)
 		}
 
-	case tea.KeyMsg:
+	case tea.MouseClickMsg:
+		// Handle mouse clicks for navigation
+		switch m.screen {
+		case types.ScreenDashboard:
+			if msg.Button == tea.MouseWheelUp && len(m.installedDistros) > 0 {
+				m.selectedInstalledIdx = (m.selectedInstalledIdx - 1 + len(m.installedDistros)) % len(m.installedDistros)
+			} else if msg.Button == tea.MouseWheelDown && len(m.installedDistros) > 0 {
+				m.selectedInstalledIdx = (m.selectedInstalledIdx + 1) % len(m.installedDistros)
+			}
+		case types.ScreenDistroFamilySelect:
+			if msg.Button == tea.MouseWheelUp {
+				m.familyList.CursorUp()
+			} else if msg.Button == tea.MouseWheelDown {
+				m.familyList.CursorDown()
+			}
+		case types.ScreenDistroVersionSelect:
+			if msg.Button == tea.MouseWheelUp {
+				m.variantList.CursorUp()
+			} else if msg.Button == tea.MouseWheelDown {
+				m.variantList.CursorDown()
+			}
+		case types.ScreenLaunchSelect:
+			distro := m.installedDistros[m.selectedInstalledIdx]
+			if msg.Button == tea.MouseWheelUp && len(distro.Users) > 0 {
+				m.selectedUserIdx = (m.selectedUserIdx - 1 + len(distro.Users)) % len(distro.Users)
+			} else if msg.Button == tea.MouseWheelDown && len(distro.Users) > 0 {
+				m.selectedUserIdx = (m.selectedUserIdx + 1) % len(distro.Users)
+			}
+		}
+
+	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "ctrl+c":
 			m.quitting = true
@@ -274,7 +313,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m model) updateDashboard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m model) updateDashboard(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "i":
 		m.screen = types.ScreenDistroFamilySelect
@@ -296,10 +335,10 @@ func (m model) updateDashboard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m model) updateFamilySelect(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m model) updateFamilySelect(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.familyList, cmd = m.familyList.Update(msg)
-	
+
 	if msg.String() == "enter" && !m.familyList.SettingFilter() {
 		i, ok := m.familyList.SelectedItem().(familyItem)
 		if ok {
@@ -311,28 +350,33 @@ func (m model) updateFamilySelect(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				}
 			}
 
-			// Prepare variants list
+			// Prepare variants list with enhanced styles
 			variants := m.distroFamilies[m.selectedFamilyIdx].Variants
 			variantItems := make([]list.Item, len(variants))
 			for i, v := range variants {
 				variantItems[i] = variantItem{variant: v}
 			}
-			
+
 			m.variantList = list.New(variantItems, list.NewDefaultDelegate(), m.familyList.Width(), m.familyList.Height())
 			m.variantList.Title = fmt.Sprintf("Select %s Version", i.family.Name)
 			m.variantList.SetShowStatusBar(false)
 			m.variantList.Styles.Title = titleStyle
-			
+			// Enhanced list styles for v2
+			m.variantList.Styles.PaginationStyle = selectedItemStyle
+			m.variantList.Styles.HelpStyle = helpStyle
+			m.variantList.Styles.ActivePaginationDot = lipgloss.NewStyle().Foreground(purple)
+			m.variantList.Styles.InactivePaginationDot = lipgloss.NewStyle().Foreground(gray)
+
 			m.screen = types.ScreenDistroVersionSelect
 		}
 	} else if msg.String() == "esc" && !m.familyList.SettingFilter() {
 		m.screen = types.ScreenDashboard
 	}
-	
+
 	return m, cmd
 }
 
-func (m model) updateVersionSelect(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m model) updateVersionSelect(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.variantList, cmd = m.variantList.Update(msg)
 
@@ -357,7 +401,7 @@ func (m model) updateVersionSelect(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m model) updateUserCredentials(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m model) updateUserCredentials(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	if m.inputMode == types.InputUsername {
 		m.usernameInput, cmd = m.usernameInput.Update(msg)
@@ -383,7 +427,7 @@ func (m model) updateUserCredentials(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m model) updateLaunchSelect(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m model) updateLaunchSelect(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	distro := m.installedDistros[m.selectedInstalledIdx]
 	switch msg.String() {
 	case "esc":
@@ -405,6 +449,12 @@ func (m model) updateLaunchSelect(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m model) View() tea.View {
 	var v tea.View
 	v.AltScreen = true
+	v.MouseMode = tea.MouseModeCellMotion
+	v.WindowTitle = "Auto-Linux - Android Linux Installer"
+	
+	// Better Color Management (v2 feature)
+	v.BackgroundColor = darkBG
+	v.ForegroundColor = white
 
 	if m.quitting {
 		return v
@@ -412,10 +462,12 @@ func (m model) View() tea.View {
 
 	if m.screen == types.ScreenDistroFamilySelect {
 		v.Content = containerStyle.Render(m.familyList.View())
+		v.WindowTitle = "Select Distribution Family - Auto-Linux"
 		return v
 	}
 	if m.screen == types.ScreenDistroVersionSelect {
 		v.Content = containerStyle.Render(m.variantList.View())
+		v.WindowTitle = "Select Version - Auto-Linux"
 		return v
 	}
 
@@ -456,6 +508,12 @@ func (m model) View() tea.View {
 	)
 
 	v.Content = containerStyle.Render(fullView)
+
+	// Progress Bar for installing screen (v2 native progress bar)
+	if m.screen == types.ScreenInstalling && m.installProgress > 0 {
+		v.ProgressBar = tea.NewProgressBar(tea.ProgressBarDefault, int(m.installProgress))
+	}
+
 	return v
 }
 
