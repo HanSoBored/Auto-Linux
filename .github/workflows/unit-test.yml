@@ -32,17 +32,20 @@ jobs:
 
       - name: Install NDK
         run: |
-          NDK_VERSION="25.2.9519653"
+          set -e
+          NDK_VERSION="27c"
           cd /tmp
-          wget -q https://dl.google.com/android/repository/android-ndk-${NDK_VERSION}-linux.zip
-          unzip -q android-ndk-${NDK_VERSION}-linux.zip
-          
-          ANDROID_NDK_HOME=/tmp/android-ndk-${NDK_VERSION}
+          echo "Downloading NDK version ${NDK_VERSION}..."
+          wget --no-verbose https://dl.google.com/android/repository/android-ndk-r${NDK_VERSION}-linux.zip
+          echo "Extracting NDK..."
+          unzip -q android-ndk-r${NDK_VERSION}-linux.zip
+
+          ANDROID_NDK_HOME=/tmp/android-ndk-r${NDK_VERSION}
           TOOLCHAIN=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64
-          
+
           echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME" >> $GITHUB_ENV
           echo "TOOLCHAIN=$TOOLCHAIN" >> $GITHUB_ENV
-          
+
           if [ "${{ matrix.goarch }}" = "arm64" ]; then
             echo "CC=$TOOLCHAIN/bin/aarch64-linux-android21-clang" >> $GITHUB_ENV
           elif [ "${{ matrix.goarch }}" = "amd64" ]; then
@@ -50,6 +53,8 @@ jobs:
           elif [ "${{ matrix.goarch }}" = "arm" ]; then
             echo "CC=$TOOLCHAIN/bin/armv7a-linux-androideabi21-clang" >> $GITHUB_ENV
           fi
+          
+          echo "NDK installation complete!"
 
       - name: Build Android Binary
         env:
