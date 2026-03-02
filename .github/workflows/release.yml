@@ -7,6 +7,7 @@ on:
       - master
     paths:
       - 'VERSION'
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -62,10 +63,23 @@ jobs:
             goos: android
             goarch: arm64
 
+          # Android x86_64 (Emulator, ChromeOS)
+          - os: ubuntu-latest
+            asset_name: autolinux-android-x86_64
+            goos: android
+            goarch: amd64
+
           # ARMv7 (Raspberry Pi 2/3)
           - os: ubuntu-latest
             asset_name: autolinux-linux-armv7
             goos: linux
+            goarch: arm
+            goarm: "7"
+
+          # Android/Termux ARMv7
+          - os: ubuntu-latest
+            asset_name: autolinux-android-armv7
+            goos: android
             goarch: arm
             goarm: "7"
 
@@ -90,12 +104,41 @@ jobs:
         with:
           go-version: '1.25'
 
+      - name: Install NDK for Android builds
+        if: matrix.goos == 'android'
+        run: |
+          # Download and setup Android NDK
+          NDK_VERSION="25.2.9519653"
+          cd /tmp
+          wget -q https://dl.google.com/android/repository/android-ndk-${NDK_VERSION}-linux.zip
+          unzip -q android-ndk-${NDK_VERSION}-linux.zip
+          export ANDROID_NDK_HOME=/tmp/android-ndk-${NDK_VERSION}
+          echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME" >> $GITHUB_ENV
+          
+          # Set up the toolchain path
+          TOOLCHAIN=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64
+          echo "TOOLCHAIN=$TOOLCHAIN" >> $GITHUB_ENV
+          
+          # Set target-specific compiler based on arch
+          if [ "${{ matrix.goarch }}" = "arm64" ]; then
+            echo "CC=$TOOLCHAIN/bin/aarch64-linux-android21-clang" >> $GITHUB_ENV
+            echo "CGO_ENABLED=1" >> $GITHUB_ENV
+            echo "CC_FOR_TARGET=aarch64-linux-android21-clang" >> $GITHUB_ENV
+          elif [ "${{ matrix.goarch }}" = "amd64" ]; then
+            echo "CC=$TOOLCHAIN/bin/x86_64-linux-android21-clang" >> $GITHUB_ENV
+            echo "CGO_ENABLED=1" >> $GITHUB_ENV
+            echo "CC_FOR_TARGET=x86_64-linux-android21-clang" >> $GITHUB_ENV
+          elif [ "${{ matrix.goarch }}" = "arm" ]; then
+            echo "CC=$TOOLCHAIN/bin/armv7a-linux-androideabi21-clang" >> $GITHUB_ENV
+            echo "CGO_ENABLED=1" >> $GITHUB_ENV
+            echo "CC_FOR_TARGET=armv7a-linux-androideabi21-clang" >> $GITHUB_ENV
+          fi
+
       - name: Build Binary
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
           GOARM: ${{ matrix.goarm || '' }}
-          CGO_ENABLED: 0
         run: |
           mkdir -p build
           go build -ldflags="-s -w" -o build/${{ matrix.asset_name }} ./cmd/autolinux
@@ -146,6 +189,8 @@ jobs:
             build/autolinux-linux-aarch64
             build/autolinux-linux-armv7
             build/autolinux-android-aarch64
+            build/autolinux-android-x86_64
+            build/autolinux-android-armv7
             build/autolinux-darwin-aarch64
             build/autolinux-darwin-x86_64
           draft: false

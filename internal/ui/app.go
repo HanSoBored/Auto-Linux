@@ -6,11 +6,11 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/list"
-	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/list"
+	"charm.land/bubbles/v2/spinner"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/HanSoBored/Auto-Linux/internal/core"
 	"github.com/HanSoBored/Auto-Linux/internal/types"
 )
@@ -153,14 +153,14 @@ func NewModel() model {
 	ui.Placeholder = "Username"
 	ui.Focus()
 	ui.CharLimit = 32
-	ui.Width = 20
+	ui.SetWidth(20)
 
 	pi := textinput.New()
 	pi.Placeholder = "Password"
 	pi.EchoMode = textinput.EchoPassword
 	pi.EchoCharacter = '•'
 	pi.CharLimit = 32
-	pi.Width = 20
+	pi.SetWidth(20)
 
 	return model{
 		device:           device,
@@ -402,23 +402,28 @@ func (m model) updateLaunchSelect(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m model) View() string {
+func (m model) View() tea.View {
+	var v tea.View
+	v.AltScreen = true
+
 	if m.quitting {
-		return ""
+		return v
 	}
 
 	if m.screen == types.ScreenDistroFamilySelect {
-		return containerStyle.Render(m.familyList.View())
+		v.Content = containerStyle.Render(m.familyList.View())
+		return v
 	}
 	if m.screen == types.ScreenDistroVersionSelect {
-		return containerStyle.Render(m.variantList.View())
+		v.Content = containerStyle.Render(m.variantList.View())
+		return v
 	}
 
 	var header string
 	title := titleStyle.Render(" AUTO-LINUX ")
 	deviceInfo := deviceStyle.Render(fmt.Sprintf(" %s | %s | Root: %v ",
 		m.device.Arch, m.device.AndroidVer, m.device.IsRoot))
-	
+
 	header = lipgloss.JoinHorizontal(lipgloss.Center, title, deviceInfo)
 
 	var content string
@@ -443,14 +448,15 @@ func (m model) View() string {
 	}
 
 	mainBox := borderStyle.Width(m.width - 6).Render(content)
-	
+
 	fullView := lipgloss.JoinVertical(lipgloss.Left,
 		header,
 		mainBox,
 		helpStyle.Render("  " + help),
 	)
 
-	return containerStyle.Render(fullView)
+	v.Content = containerStyle.Render(fullView)
+	return v
 }
 
 func (m model) dashboardView() string {
@@ -543,7 +549,8 @@ func (m model) launchSelectView() string {
 }
 
 func Run() {
-	p := tea.NewProgram(NewModel(), tea.WithAltScreen())
+	m := NewModel()
+	p := tea.NewProgram(m)
 	if _, err := p.Run(); err != nil {
 		fmt.Printf("Error running program: %v", err)
 		os.Exit(1)
