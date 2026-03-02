@@ -1,12 +1,15 @@
 # Auto-Linux
 
 ![Build Status](https://img.shields.io/github/actions/workflow/status/HanSoBored/Auto-Linux/release.yml?branch=main)
-![Language](https://img.shields.io/badge/language-Go-orange)
+![Language](https://img.shields.io/badge/language-Go-blue)
 ![Platform](https://img.shields.io/badge/platform-Android%20(Root)-green)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
 <div align="center">
-  <video src="https://raw.githubusercontent.com/HanSoBored/Auto-Linux/main/previews/demo.mp4" controls></video>
+  <a href="https://github.com/HanSoBored/Auto-Linux/releases/download/v1.0.0/demo.mp4" target="_blank">
+    <img src="https://raw.githubusercontent.com/HanSoBored/Auto-Linux/main/previews/thumbnail.jpg" alt="Watch Demo" width="500" />
+  </a>
+  <p><em>🎬 Click to watch demo (41 seconds)</em></p>
 </div>
 
 **Auto-Linux** is a standalone, advanced Linux installer and manager for **rooted** Android devices. Rewritten in Go, it provides a feature-rich Terminal User Interface (TUI) to install, configure, and manage various Linux distributions in a Chroot environment without relying on Termux, Busybox, or other external dependencies.
