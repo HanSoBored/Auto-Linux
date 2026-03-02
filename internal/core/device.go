@@ -1,6 +1,7 @@
 package core
 
 import (
+	"os"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -32,23 +33,37 @@ func checkCurrentUserRoot() bool {
 	return strings.TrimSpace(string(output)) == "0"
 }
 
+// fileExists checks if a file exists and is executable
+func fileExists(path string) bool {
+	info, err := os.Stat(path)
+	if err != nil {
+		return false
+	}
+	// Check if file is executable (at least for owner)
+	mode := info.Mode()
+	return mode.IsRegular() && (mode&0o111 != 0)
+}
+
 func checkSUAccess() bool {
-	_, err := exec.LookPath("su")
-	if err == nil {
-		return true
-	}
-	knownPaths := []string{
-		"/sbin/su",
-		"/system/bin/su",
-		"/system/xbin/su",
-		"/data/adb/ksu/bin/su",
-		"/data/adb/apatch/bin/su",
-	}
-	for _, path := range knownPaths {
-		if _, err := exec.Command(path, "-v").Output(); err == nil {
+	// First try PATH lookup using manual search instead of exec.LookPath
+	pathDirs := []string{"/system/bin", "/system/xbin", "/sbin", "/data/adb/ksu/bin", "/data/adb/apatch/bin"}
+	for _, dir := range pathDirs {
+		suPath := dir + "/su"
+		if fileExists(suPath) {
 			return true
 		}
 	}
+	
+	// Also check current PATH
+	if path := os.Getenv("PATH"); path != "" {
+		for _, dir := range strings.Split(path, ":") {
+			suPath := dir + "/su"
+			if fileExists(suPath) {
+				return true
+			}
+		}
+	}
+	
 	return false
 }
 
