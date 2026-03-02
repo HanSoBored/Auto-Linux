@@ -12,6 +12,20 @@ INSTALL_DIR="/usr/local/bin"
 OS="$(uname -s)"
 ARCH="$(uname -m)"
 
+# --- DETECT TERMUX / ADB ---
+IS_TERMUX=false
+IS_ADB=false
+
+if [ -n "$TERMUX_VERSION" ] || [ -d "/data/data/com.termux" ]; then
+    IS_TERMUX=true
+    INSTALL_DIR="/data/data/com.termux/files/usr/bin"
+    echo "📱 Termux detected"
+elif [ -d "/data/local/tmp" ] && [ ! -d "/data/data/com.termux" ]; then
+    IS_ADB=true
+    INSTALL_DIR="/data/local/tmp"
+    echo "🔌 ADB environment detected"
+fi
+
 echo "🔍 Detecting system..."
 echo "   OS: $OS"
 echo "   Arch: $ARCH"
