@@ -72,21 +72,21 @@ DOWNLOAD_URL="https://github.com/$REPO_OWNER/$REPO_NAME/releases/latest/download
 # Use curl to download to temp folder
 # -L follows redirects
 # -f fails silently on server error (404) so we can catch it
-if ! curl -f -L -o "/tmp/$BINARY_BASE_NAME" "$DOWNLOAD_URL"; then
+if ! curl -f -L -o "$TEMP_DIR/$BINARY_BASE_NAME" "$DOWNLOAD_URL"; then
     echo "❌ Error: Failed to download. The release asset '$TARGET_FILE' might not exist yet."
     exit 1
 fi
 
 # --- INSTALLING ---
 echo "📦 Installing to $INSTALL_DIR..."
-chmod +x "/tmp/$BINARY_BASE_NAME"
+chmod +x "$TEMP_DIR/$BINARY_BASE_NAME"
 
 # Check write permissions
 if [ -w "$INSTALL_DIR" ]; then
-    mv "/tmp/$BINARY_BASE_NAME" "$INSTALL_DIR/$FINAL_NAME"
+    mv "$TEMP_DIR/$BINARY_BASE_NAME" "$INSTALL_DIR/$FINAL_NAME"
 else
     echo "🔑 Sudo permission required to move binary to $INSTALL_DIR"
-    sudo mv "/tmp/$BINARY_BASE_NAME" "$INSTALL_DIR/$FINAL_NAME"
+    sudo mv "$TEMP_DIR/$BINARY_BASE_NAME" "$INSTALL_DIR/$FINAL_NAME"
 fi
 
 echo "✅ Installed successfully!"
