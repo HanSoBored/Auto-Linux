@@ -56,10 +56,29 @@ jobs:
             goos: linux
             goarch: arm64
 
+          # Android/Termux ARM64
+          - os: ubuntu-latest
+            asset_name: autolinux-android-aarch64
+            goos: android
+            goarch: arm64
+
+          # Android x86_64 (Emulator, ChromeOS)
+          - os: ubuntu-latest
+            asset_name: autolinux-android-x86_64
+            goos: android
+            goarch: amd64
+
           # ARMv7 (Raspberry Pi 2/3)
           - os: ubuntu-latest
             asset_name: autolinux-linux-armv7
             goos: linux
+            goarch: arm
+            goarm: "7"
+
+          # Android/Termux ARMv7
+          - os: ubuntu-latest
+            asset_name: autolinux-android-armv7
+            goos: android
             goarch: arm
             goarm: "7"
 
@@ -138,6 +157,9 @@ jobs:
             build/autolinux-linux-x86_64
             build/autolinux-linux-aarch64
             build/autolinux-linux-armv7
+            build/autolinux-android-aarch64
+            build/autolinux-android-x86_64
+            build/autolinux-android-armv7
             build/autolinux-darwin-aarch64
             build/autolinux-darwin-x86_64
           draft: false

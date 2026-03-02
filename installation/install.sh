@@ -37,15 +37,30 @@ SUFFIX=""
 
 # 1. DETECT OS & MAP ARCHITECTURE
 if [ "$OS" = "Linux" ]; then
-    if [ "$ARCH" = "x86_64" ]; then
-        SUFFIX="linux-x86_64"
-    elif [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
-        SUFFIX="linux-aarch64"
-    elif [[ "$ARCH" == armv7* ]] || [ "$ARCH" = "arm" ]; then
-        SUFFIX="linux-armv7"
+    # Check for Android (Termux) first
+    if [ -d "/system/bin" ] || [ -n "$TERMUX_VERSION" ] || [ -d "/data/data/com.termux" ]; then
+        if [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
+            SUFFIX="android-aarch64"
+        elif [ "$ARCH" = "x86_64" ]; then
+            SUFFIX="android-x86_64"
+        elif [[ "$ARCH" == armv7* ]] || [ "$ARCH" = "arm" ]; then
+            SUFFIX="android-armv7"
+        else
+            echo "❌ Unsupported Architecture: $ARCH on Android"
+            exit 1
+        fi
     else
-        echo "❌ Unsupported Architecture: $ARCH on Linux"
-        exit 1
+        # Standard Linux
+        if [ "$ARCH" = "x86_64" ]; then
+            SUFFIX="linux-x86_64"
+        elif [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
+            SUFFIX="linux-aarch64"
+        elif [[ "$ARCH" == armv7* ]] || [ "$ARCH" = "arm" ]; then
+            SUFFIX="linux-armv7"
+        else
+            echo "❌ Unsupported Architecture: $ARCH on Linux"
+            exit 1
+        fi
     fi
 elif [ "$OS" = "Darwin" ]; then
     if [ "$ARCH" = "x86_64" ]; then
