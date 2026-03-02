@@ -1,0 +1,145 @@
+name: Release & Publish
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - 'VERSION'
+
+permissions:
+  contents: write
+
+jobs:
+  check-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.get_version.outputs.version }}
+      tag_exists: ${{ steps.check_tag.outputs.exists }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Get version
+        id: get_version
+        run: |
+          VERSION=$(cat VERSION | tr -d '[:space:]')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+      - name: Check Tag
+        id: check_tag
+        run: |
+          git fetch --tags
+          if git rev-parse "v${{ steps.get_version.outputs.version }}" >/dev/null 2>&1; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+  build-binaries:
+    needs: check-version
+    if: needs.check-version.outputs.tag_exists == 'false'
+    name: Build ${{ matrix.asset_name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # --- LINUX ---
+          # Standard Server/Desktop (x86_64)
+          - os: ubuntu-latest
+            asset_name: autolinux-linux-x86_64
+            goos: linux
+            goarch: amd64
+
+          # ARM64 (Raspberry Pi 4, AWS Graviton)
+          - os: ubuntu-latest
+            asset_name: autolinux-linux-aarch64
+            goos: linux
+            goarch: arm64
+
+          # ARMv7 (Raspberry Pi 2/3)
+          - os: ubuntu-latest
+            asset_name: autolinux-linux-armv7
+            goos: linux
+            goarch: arm
+            goarm: "7"
+
+          # --- MACOS ---
+          # Apple Silicon (M1/M2/M3)
+          - os: macos-latest
+            asset_name: autolinux-darwin-aarch64
+            goos: darwin
+            goarch: arm64
+
+          # Intel Mac
+          - os: macos-latest
+            asset_name: autolinux-darwin-x86_64
+            goos: darwin
+            goarch: amd64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+
+      - name: Build Binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          GOARM: ${{ matrix.goarm || '' }}
+        run: |
+          mkdir -p build
+          go build -ldflags="-s -w" -o build/${{ matrix.asset_name }} ./cmd/autolinux
+
+      - name: Prepare Asset
+        shell: bash
+        run: |
+          chmod +x build/${{ matrix.asset_name }}
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: binary-${{ matrix.asset_name }}
+          path: build/${{ matrix.asset_name }}
+
+  create-release:
+    needs: [check-version, build-binaries]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: binary-*
+          merge-multiple: true
+          path: build
+
+      - name: Generate Changelog
+        uses: orhun/git-cliff-action@v4
+        id: git_cliff
+        with:
+          config: .github/external/cliff.toml
+          args: --verbose --tag ${{ needs.check-version.outputs.version }} --strip header
+        env:
+          OUTPUT: CHANGELOG.md
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ needs.check-version.outputs.version }}
+          name: Release ${{ needs.check-version.outputs.version }}
+          body: ${{ steps.git_cliff.outputs.content }}
+          files: |
+            build/autolinux-linux-x86_64
+            build/autolinux-linux-aarch64
+            build/autolinux-linux-armv7
+            build/autolinux-darwin-aarch64
+            build/autolinux-darwin-x86_64
+          draft: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

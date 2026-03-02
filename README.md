@@ -1,11 +1,15 @@
 # Auto-Linux
 
-![Build Status](https://img.shields.io/github/actions/workflow/status/HanSoBored/Auto-Linux/build.yml?branch=main)
-![Language](https://img.shields.io/badge/language-Rust-orange)
+![Build Status](https://img.shields.io/github/actions/workflow/status/HanSoBored/Auto-Linux/release.yml?branch=main)
+![Language](https://img.shields.io/badge/language-Go-orange)
 ![Platform](https://img.shields.io/badge/platform-Android%20(Root)-green)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
-**Auto-Linux** is a standalone, advanced Linux installer and manager for **rooted** Android devices. Built with Rust, it provides a feature-rich Terminal User Interface (TUI) to install, configure, and manage various Linux distributions in a Chroot environment without relying on Termux, Busybox, or other external dependencies.
+<div align="center">
+  <video src="https://raw.githubusercontent.com/HanSoBored/Auto-Linux/main/previews/demo.mp4" controls></video>
+</div>
+
+**Auto-Linux** is a standalone, advanced Linux installer and manager for **rooted** Android devices. Rewritten in Go, it provides a feature-rich Terminal User Interface (TUI) to install, configure, and manage various Linux distributions in a Chroot environment without relying on Termux, Busybox, or other external dependencies.
 
 > **Beyond simple scripts:** Auto-Linux handles complex tasks like OCI image extraction, host-side security attribute stripping, and DNS injection to ensure modern distros (like Fedora & Void) run smoothly on Android.
 
@@ -13,8 +17,8 @@
 
 ## Key Features
 
-*   **Truly Standalone:** Compiled as a single static `musl` binary (~2MB). Zero runtime dependencies.
-*   **Intuitive TUI:** Keyboard-driven dashboard (powered by `ratatui`) for distro selection, credential setup, and one-click launching.
+*   **Truly Standalone:** Compiled as a single static binary. Zero runtime dependencies.
+*   **Intuitive TUI:** Keyboard-driven dashboard (powered by `bubbletea`) for distro selection, credential setup, and one-click launching.
 *   **Multi-Distro Support:**
     *   **Debian/Ubuntu:** Ubuntu (20.04 - 26.04), Debian, Kali Linux.
     *   **Rolling Release:** Arch Linux ARM (with automatic Keyring init), Void Linux.
@@ -52,33 +56,21 @@ Auto-Linux currently supports fetching and installing the following families:
 
 ### Option 1: Quick Install (Termux/ADB)
 ```bash
-curl -sL https://raw.githubusercontent.com/HanSoBored/Auto-Linux/main/install.sh | sh
+curl -sL https://raw.githubusercontent.com/HanSoBored/Auto-Linux/main/installation/install.sh | sh
 ```
 
 ### Option 2: Manual Push
 1.  Download the latest binary from [Releases](https://github.com/HanSoBored/Auto-Linux/releases).
 2.  Push to device:
     ```sh
-    adb push autolinux-aarch64 /data/local/rootfs/autolinux
-    adb shell "chmod +x /data/local/rootfs/autolinux"
+    adb push autolinux-linux-aarch64 /data/local/tmp/autolinux
+    adb shell "chmod +x /data/local/tmp/autolinux"
     ```
 3.  Run:
     ```sh
     adb shell
-    su -c /data/local/rootfs/autolinux
+    su -c /data/local/tmp/autolinux
     ```
-
----
-
-## Screenshots
-
-| Dashboard | Family Selection |
-| :---: | :---: |
-| ![Dashboard](https://raw.githubusercontent.com/HanSoBored/Auto-Linux/main/preview/Dashboard.jpg) | ![Distro-List](https://raw.githubusercontent.com/HanSoBored/Auto-Linux/main/preview/Distro-List.jpg) |
-
-| Version List | Installed |
-| :---: | :---: |
-| ![Version-List](https://raw.githubusercontent.com/HanSoBored/Auto-Linux/main/preview/Distro-Version-List.jpg) | ![Installed](https://raw.githubusercontent.com/HanSoBored/Auto-Linux/main/preview/Distro-Installed-List.jpg) |
 
 ---
 
@@ -86,36 +78,36 @@ curl -sL https://raw.githubusercontent.com/HanSoBored/Auto-Linux/main/install.sh
 
 | Debian | Ubuntu |
 | :---: | :---: |
-| ![Debian](https://raw.githubusercontent.com/HanSoBored/Auto-Linux/main/preview/distro/Debian.jpg) | ![Ubuntu](https://raw.githubusercontent.com/HanSoBored/Auto-Linux/main/preview/distro/Ubuntu.jpg) |
+| ![Debian](https://raw.githubusercontent.com/HanSoBored/Auto-Linux/main/previews/distro/Debian.jpg) | ![Ubuntu](https://raw.githubusercontent.com/HanSoBored/Auto-Linux/main/previews/distro/Ubuntu.jpg) |
 
 | Alpine | Arch |
 | :---: | :---: |
-| ![Alpine](https://raw.githubusercontent.com/HanSoBored/Auto-Linux/main/preview/distro/Alpine.jpg) | ![Arch](https://raw.githubusercontent.com/HanSoBored/Auto-Linux/main/preview/distro/Arch.jpg) |
+| ![Alpine](https://raw.githubusercontent.com/HanSoBored/Auto-Linux/main/previews/distro/Alpine.jpg) | ![Arch](https://raw.githubusercontent.com/HanSoBored/Auto-Linux/main/previews/distro/Arch.jpg) |
 
 | Fedora | Kali | Void |
 | :---: | :---: | :---: |
-| ![Fedora](https://raw.githubusercontent.com/HanSoBored/Auto-Linux/main/preview/distro/Fedora.jpg) | ![Kali](https://raw.githubusercontent.com/HanSoBored/Auto-Linux/main/preview/distro/Kali.jpg) | ![Void](https://raw.githubusercontent.com/HanSoBored/Auto-Linux/main/preview/distro/Void.jpg) |
+| ![Fedora](https://raw.githubusercontent.com/HanSoBored/Auto-Linux/main/previews/distro/Fedora.jpg) | ![Kali](https://raw.githubusercontent.com/HanSoBored/Auto-Linux/main/previews/distro/Kali.jpg) | ![Void](https://raw.githubusercontent.com/HanSoBored/Auto-Linux/main/previews/distro/Void.jpg) |
 
 ---
 
 ## Build from Source
 
-To ensure compatibility with Android's libc, we build statically against `musl`.
-
 ### Prerequisites
-*   Rust Toolchain
-*   `cross` (Recommended for easy cross-compilation)
-
-```bash
-cargo install cross
-```
+*   Go 1.25+
 
 ### Build Command
 ```bash
-# Build a static binary for Android (AArch64)
-cross build --target aarch64-unknown-linux-musl --release
+# Build for Android (AArch64)
+GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o autolinux ./cmd/autolinux
 ```
-The binary will be at `target/aarch64-unknown-linux-musl/release/autolinux`.
+
+### Using build.sh
+```bash
+chmod +x installation/build.sh
+./installation/build.sh
+```
+
+The binary will be at `build/autolinux`.
 
 ---
 
