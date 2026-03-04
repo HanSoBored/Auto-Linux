@@ -258,7 +258,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.quitting = true
 			return m, tea.Quit
 		case "q":
-			if m.screen != types.ScreenUserCredentials && m.screen != types.ScreenInstalling && !m.familyList.FilteringEnabled() {
+			// 'q' only quits on Dashboard, Finished, and LaunchSelect screens
+			if m.screen == types.ScreenDashboard || m.screen == types.ScreenFinished || m.screen == types.ScreenLaunchSelect {
 				m.quitting = true
 				return m, tea.Quit
 			}
@@ -336,6 +337,12 @@ func (m model) updateDashboard(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) updateFamilySelect(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	// Handle 'esc' BEFORE passing to list to prevent list's default behavior
+	if msg.String() == "esc" && !m.familyList.SettingFilter() {
+		m.screen = types.ScreenDashboard
+		return m, nil
+	}
+
 	var cmd tea.Cmd
 	m.familyList, cmd = m.familyList.Update(msg)
 
@@ -369,14 +376,18 @@ func (m model) updateFamilySelect(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 			m.screen = types.ScreenDistroVersionSelect
 		}
-	} else if msg.String() == "esc" && !m.familyList.SettingFilter() {
-		m.screen = types.ScreenDashboard
 	}
 
 	return m, cmd
 }
 
 func (m model) updateVersionSelect(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	// Handle 'esc' BEFORE passing to list to prevent list's default behavior
+	if msg.String() == "esc" && !m.variantList.SettingFilter() {
+		m.screen = types.ScreenDistroFamilySelect
+		return m, nil
+	}
+
 	var cmd tea.Cmd
 	m.variantList, cmd = m.variantList.Update(msg)
 
@@ -394,8 +405,6 @@ func (m model) updateVersionSelect(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.usernameInput.Focus()
 			m.screen = types.ScreenUserCredentials
 		}
-	} else if msg.String() == "esc" && !m.variantList.SettingFilter() {
-		m.screen = types.ScreenDistroFamilySelect
 	}
 
 	return m, cmd
