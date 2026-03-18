@@ -174,7 +174,7 @@ jobs:
         id: git_cliff
         with:
           config: .github/external/cliff.toml
-          args: --verbose --tag ${{ needs.check-version.outputs.version }} --strip header
+          args: --verbose --unreleased --tag v${{ needs.check-version.outputs.version }} --strip all
         env:
           OUTPUT: CHANGELOG.md
 
