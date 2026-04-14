@@ -50,9 +50,9 @@ func getDebianFamily(arch string) types.DistroFamily {
 			Name:        "Debian",
 			Description: "Stable, Reliable, Widely-Used Server Distro.",
 			Variants: []types.Distro{
-				{Name: "Debian 11 (Bullseye)", Codename: "bullseye", Version: "11", URL: "https://github.com/HanSoBored/Debootstrap-Linux/releases/download/debian/debian-bullseye-aarch64.tar.gz"},
-				{Name: "Debian 12 (Bookworm)", Codename: "bookworm", Version: "12", URL: "https://github.com/HanSoBored/Debootstrap-Linux/releases/download/debian/debian-bookworm-aarch64.tar.gz"},
-				{Name: "Debian 13 (Trixie)", Codename: "trixie", Version: "13", URL: "https://github.com/HanSoBored/Debootstrap-Linux/releases/download/debian/debian-trixie-aarch64.tar.gz"},
+				{Name: "Debian 11 (Bullseye)", Codename: "bullseye", Version: "11", URL: "https://github.com/HSB-Tools/Debootstrap-Linux/releases/download/debian/debian-bullseye-aarch64.tar.gz"},
+				{Name: "Debian 12 (Bookworm)", Codename: "bookworm", Version: "12", URL: "https://github.com/HSB-Tools/Debootstrap-Linux/releases/download/debian/debian-bookworm-aarch64.tar.gz"},
+				{Name: "Debian 13 (Trixie)", Codename: "trixie", Version: "13", URL: "https://github.com/HSB-Tools/Debootstrap-Linux/releases/download/debian/debian-trixie-aarch64.tar.gz"},
 			},
 		}
 	}
