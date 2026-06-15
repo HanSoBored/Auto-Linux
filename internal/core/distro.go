@@ -39,7 +39,7 @@ func getUbuntuFamily(arch string) types.DistroFamily {
 			{Name: "Ubuntu 20.04 LTS (Focal Fossa)", Codename: "focal", Version: "20.04.5", URL: fmt.Sprintf("https://cdimage.ubuntu.com/ubuntu-base/releases/20.04/release/ubuntu-base-20.04.5-base-%s.tar.gz", debArch)},
 			{Name: "Ubuntu 22.04 LTS (Jammy Jellyfish)", Codename: "jammy", Version: "22.04.5", URL: fmt.Sprintf("https://cdimage.ubuntu.com/ubuntu-base/releases/22.04/release/ubuntu-base-22.04.5-base-%s.tar.gz", debArch)},
 			{Name: "Ubuntu 24.04 LTS (Noble Numbat)", Codename: "noble", Version: "24.04.3", URL: fmt.Sprintf("https://cdimage.ubuntu.com/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.3-base-%s.tar.gz", debArch)},
-			{Name: "Ubuntu 26.04 LTS (Resolute Raccoon)", Codename: "resolute", Version: "26.04", URL: fmt.Sprintf("https://cdimage.ubuntu.com/ubuntu-base/releases/26.04/snapshot1/ubuntu-base-26.04-base-%s.tar.gz", debArch)},
+			{Name: "Ubuntu 26.04 LTS (Resolute Raccoon)", Codename: "resolute", Version: "26.04", URL: fmt.Sprintf("https://cdimage.ubuntu.com/ubuntu-base/releases/26.04/release/ubuntu-base-26.04-base-%s.tar.gz", debArch)},
 		},
 	}
 }
